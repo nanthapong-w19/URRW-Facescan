@@ -1,0 +1,68 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 98%;
+    --foreground: 200 30% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 200 30% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 30% 12%;
+    --primary: 172 68% 30%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 190 25% 94%;
+    --secondary-foreground: 200 30% 16%;
+    --muted: 190 20% 95%;
+    --muted-foreground: 200 12% 45%;
+    --accent: 28 92% 54%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 4 78% 56%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 200 20% 89%;
+    --input: 200 20% 89%;
+    --ring: 172 68% 30%;
+    --radius: 0.9rem;
+  }
+
+  .dark {
+    --background: 200 35% 7%;
+    --foreground: 190 20% 96%;
+    --card: 200 30% 10%;
+    --card-foreground: 190 20% 96%;
+    --popover: 200 30% 10%;
+    --popover-foreground: 190 20% 96%;
+    --primary: 168 55% 48%;
+    --primary-foreground: 200 40% 8%;
+    --secondary: 200 20% 16%;
+    --secondary-foreground: 190 20% 96%;
+    --muted: 200 20% 16%;
+    --muted-foreground: 200 12% 65%;
+    --accent: 28 92% 58%;
+    --accent-foreground: 200 40% 8%;
+    --destructive: 4 70% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 200 20% 18%;
+    --input: 200 20% 18%;
+    --ring: 168 55% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+  }
+}
