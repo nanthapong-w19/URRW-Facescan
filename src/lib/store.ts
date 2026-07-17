@@ -40,9 +40,46 @@ function rowToCheckin(row: CheckinRow): CheckinRecord {
   }
 }
 
-/** Friendlier Thai messages for the Postgres/PostgREST errors this app can actually hit. */
+/**
+ * Friendlier Thai messages for the Postgres/PostgREST errors this app can
+ * actually hit.
+ *
+ * IMPORTANT: the `error` object supabase-js returns from a query (a
+ * PostgrestError) is a plain object, NOT an `instanceof Error` — so the old
+ * `err instanceof Error ? err.message : String(err)` fell through to
+ * `String(err)` for every real database error, which for a plain object
+ * just gives the useless literal string "[object Object]". That completely
+ * hid the actual reason a query failed (RLS denial, missing column, bad
+ * relationship, etc.) behind "เกิดข้อผิดพลาดในการบันทึกข้อมูล: [object Object]".
+ * Pull `.message`/`.details`/`.hint`/`.code` off the error object directly
+ * instead of blindly stringifying it.
+ */
 function describeDbError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err)
+  let message: string
+  if (err instanceof Error) {
+    message = err.message
+  } else if (err && typeof err === 'object') {
+    const e = err as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown }
+    if (typeof e.message === 'string' && e.message) {
+      message = e.message
+    } else if (typeof e.details === 'string' && e.details) {
+      message = e.details
+    } else if (typeof e.hint === 'string' && e.hint) {
+      message = e.hint
+    } else {
+      try {
+        message = JSON.stringify(err)
+      } catch {
+        message = String(err)
+      }
+    }
+    if (typeof e.code === 'string' && e.code && !message.includes(e.code)) {
+      message = `${message} (${e.code})`
+    }
+  } else {
+    message = String(err)
+  }
+
   if (message.includes('duplicate key value') || message.includes('facein_members_employee_id_key')) {
     return 'รหัสพนักงานนี้มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น'
   }
