@@ -14,6 +14,7 @@ import {
   CameraOff,
   Search,
   SwitchCamera,
+  ShieldAlert,
 } from 'lucide-react'
 import {
   Select,
@@ -31,11 +32,13 @@ import {
   distanceToConfidence,
   MATCH_THRESHOLD,
 } from '@/lib/faceEngine'
+import { describeGetUserMediaError, sampleCanvasBrightness } from '@/lib/cameraHelpers'
 import type { Member } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type CameraState = 'idle' | 'loading' | 'ready' | 'error'
 type ScanFeedback = { kind: 'success' | 'unknown'; name?: string; department?: string } | null
+type OverlayBox = { box: { x: number; y: number; width: number; height: number }; color: string; label: string } | null
 
 // Plays a short, pleasant two-tone chime using the Web Audio API so no
 // external audio asset needs to be bundled.
@@ -73,7 +76,11 @@ export default function FaceScanner() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<number | null>(null)
+  const paintRafRef = useRef<number | null>(null)
   const lastCheckinRef = useRef<Record<string, number>>({})
+  const overlayRef = useRef<OverlayBox>(null)
+  const framesPaintedRef = useRef(0)
+  const brightnessSamplesRef = useRef<number[]>([])
 
   const [cameraState, setCameraState] = useState<CameraState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -81,6 +88,9 @@ export default function FaceScanner() {
   const [manualQuery, setManualQuery] = useState('')
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [activeDeviceId, setActiveDeviceId] = useState<string | undefined>(undefined)
+  const [trackMuted, setTrackMuted] = useState(false)
+  const [noFrames, setNoFrames] = useState(false)
+  const [blackFrames, setBlackFrames] = useState(false)
 
   // Refreshes the labeled device list — labels are only populated once
   // permission has been granted at least once, so this is called again
@@ -94,37 +104,135 @@ export default function FaceScanner() {
     }
   }, [])
 
-  const startCamera = useCallback(async (deviceId?: string) => {
-    setCameraState('loading')
-    setErrorMsg('')
-    try {
-      await loadFaceModels()
-    } catch {
-      setErrorMsg(
-        'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ อาจเกิดจากข้อจำกัดเครือข่ายของหน้าตัวอย่างนี้ กรุณารันโปรเจกต์นี้ในเครื่องของคุณเพื่อใช้กล้องจริง หรือใช้ "เช็คอินแบบ Manual" ด้านล่างแทนได้ทันที'
-      )
-      setCameraState('error')
-      return
-    }
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' },
-      })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
+  // Continuously paints the current video frame onto a visible <canvas>
+  // (mirrored) instead of relying on the browser to composite a raw
+  // <video> element with a CSS transform. Some Chromium/GPU/driver
+  // combinations on Windows fail to paint a transformed <video> element
+  // at all (renders solid black) even though the underlying MediaStream
+  // is perfectly valid — drawing frames through a 2D canvas sidesteps
+  // that rendering path entirely and is far more consistent across
+  // devices/browsers.
+  const paintLoop = useCallback(() => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (video && canvas && video.readyState >= 2 && video.videoWidth > 0) {
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
       }
-      const track = stream.getVideoTracks()[0]
-      setActiveDeviceId(track?.getSettings().deviceId ?? deviceId)
-      setCameraState('ready')
-      refreshDeviceList()
-    } catch {
-      setErrorMsg('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง หรือใช้ "เช็คอินแบบ Manual" แทน')
-      setCameraState('error')
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.save()
+        ctx.translate(canvas.width, 0)
+        ctx.scale(-1, 1)
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+        const overlay = overlayRef.current
+        if (overlay) {
+          const { box, color } = overlay
+          ctx.strokeStyle = color
+          ctx.lineWidth = 4
+          ctx.strokeRect(box.x, box.y, box.width, box.height)
+        }
+        ctx.restore()
+
+        if (overlay) {
+          const { box, color, label } = overlay
+          const mirroredX = canvas.width - box.x - box.width
+          ctx.font = '600 20px "Plus Jakarta Sans", sans-serif'
+          const textWidth = ctx.measureText(label).width
+          ctx.fillStyle = color
+          ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText(label, mirroredX + 6, box.y - 11)
+        }
+
+        framesPaintedRef.current += 1
+        if (framesPaintedRef.current % 15 === 0) {
+          const brightness = sampleCanvasBrightness(canvas)
+          if (brightness !== null) {
+            const samples = brightnessSamplesRef.current
+            samples.push(brightness)
+            if (samples.length > 8) samples.shift()
+          }
+        }
+      }
     }
-  }, [refreshDeviceList])
+    paintRafRef.current = requestAnimationFrame(paintLoop)
+  }, [])
+
+  const startCamera = useCallback(
+    async (deviceId?: string, isRetryWithoutConstraints = false) => {
+      setCameraState('loading')
+      setErrorMsg('')
+      setTrackMuted(false)
+      setNoFrames(false)
+      setBlackFrames(false)
+      framesPaintedRef.current = 0
+      brightnessSamplesRef.current = []
+      try {
+        await loadFaceModels()
+      } catch {
+        setErrorMsg(
+          'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ อาจเกิดจากข้อจำกัดเครือข่ายของหน้าตัวอย่างนี้ กรุณารันโปรเจกต์นี้ในเครื่องของคุณเพื่อใช้กล้องจริง หรือใช้ "เช็คอินแบบ Manual" ด้านล่างแทนได้ทันที'
+        )
+        setCameraState('error')
+        return
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: deviceId && !isRetryWithoutConstraints ? { deviceId: { exact: deviceId } } : { facingMode: 'user' },
+        })
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+        const track = stream.getVideoTracks()[0]
+        setActiveDeviceId(track?.getSettings().deviceId ?? deviceId)
+        if (track) {
+          setTrackMuted(track.muted)
+          track.onmute = () => setTrackMuted(true)
+          track.onunmute = () => setTrackMuted(false)
+        }
+        setCameraState('ready')
+        refreshDeviceList()
+
+        // A few seconds in, check two distinct failure modes that both
+        // *look* like "black screen" to the user but need different fixes:
+        // 1. The paint loop never received a single real frame at all
+        //    (stream "open" but literally nothing decoded yet).
+        // 2. Frames ARE being decoded and painted, but their content is
+        //    consistently near-black — the camera/OS/security software is
+        //    delivering genuine blackout frames. No web app code can fix
+        //    that; it needs to be resolved on the OS/driver/antivirus side.
+        window.setTimeout(() => {
+          const painted = framesPaintedRef.current
+          setNoFrames(painted === 0)
+          if (painted > 0) {
+            const samples = brightnessSamplesRef.current
+            const avg = samples.length ? samples.reduce((a, b) => a + b, 0) / samples.length : 0
+            setBlackFrames(avg < 8)
+          }
+        }, 3000)
+      } catch (err) {
+        // If a specific camera device fails with "overconstrained" (e.g.
+        // it disappeared, or its exact deviceId is no longer valid),
+        // automatically retry once with plain default constraints instead
+        // of just showing an error — this covers a lot of "works on some
+        // devices, not others" cases without the user needing to do anything.
+        const name = err instanceof DOMException ? err.name : ''
+        if (deviceId && !isRetryWithoutConstraints && (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError')) {
+          startCamera(undefined, true)
+          return
+        }
+        setErrorMsg(describeGetUserMediaError(err))
+        setCameraState('error')
+      }
+    },
+    [refreshDeviceList]
+  )
 
   const stopCamera = useCallback(() => {
     if (timerRef.current) window.clearInterval(timerRef.current)
@@ -135,42 +243,16 @@ export default function FaceScanner() {
 
   useEffect(() => {
     startCamera()
+    paintRafRef.current = requestAnimationFrame(paintLoop)
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current)
+      if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current)
       streamRef.current?.getTracks().forEach((t) => t.stop())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const drawOverlay = useCallback(
-    (box: { x: number; y: number; width: number; height: number } | null, matched: Member | null) => {
-      const canvas = canvasRef.current
-      const video = videoRef.current
-      if (!canvas || !video) return
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      if (!box) return
-
-      const color = matched ? '#10b981' : '#f59e0b'
-      ctx.strokeStyle = color
-      ctx.lineWidth = 4
-      ctx.strokeRect(box.x, box.y, box.width, box.height)
-
-      const label = matched ? matched.name : 'ไม่พบในระบบ'
-      ctx.font = '600 20px "Plus Jakarta Sans", sans-serif'
-      const textWidth = ctx.measureText(label).width
-      ctx.fillStyle = color
-      ctx.fillRect(box.x - 2, box.y - 34, textWidth + 16, 30)
-      ctx.fillStyle = '#ffffff'
-      ctx.fillText(label, box.x + 6, box.y - 11)
-    },
-    []
-  )
-
-  // Main detection loop
+  // Main detection loop — throttled independently of the paint loop above.
   useEffect(() => {
     if (cameraState !== 'ready') return
 
@@ -184,7 +266,7 @@ export default function FaceScanner() {
         return
       }
       if (!result) {
-        drawOverlay(null, null)
+        overlayRef.current = null
         return
       }
 
@@ -196,7 +278,11 @@ export default function FaceScanner() {
       }
 
       const isMatch = best && best.distance < MATCH_THRESHOLD
-      drawOverlay(result.box, isMatch ? best!.member : null)
+      overlayRef.current = {
+        box: result.box,
+        color: isMatch ? '#10b981' : '#f59e0b',
+        label: isMatch ? best!.member.name : 'ไม่พบในระบบ',
+      }
 
       if (isMatch) {
         const member = best!.member
@@ -216,7 +302,7 @@ export default function FaceScanner() {
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current)
     }
-  }, [cameraState, registeredMembers, drawOverlay])
+  }, [cameraState, registeredMembers])
 
   const manualMatches = useMemo(() => {
     if (!manualQuery.trim()) return []
@@ -237,6 +323,8 @@ export default function FaceScanner() {
     playSuccessChime()
     setManualQuery('')
   }
+
+  const showFrameWarning = cameraState === 'ready' && (trackMuted || noFrames || blackFrames)
 
   return (
     <div className="space-y-6">
@@ -302,11 +390,45 @@ export default function FaceScanner() {
                   </Button>
                 </div>
               )}
-              {(cameraState === 'ready' || cameraState === 'idle') && (
-                <>
-                  <video ref={videoRef} muted playsInline className="h-full w-full object-cover -scale-x-100" />
-                  <canvas ref={canvasRef} className="absolute inset-0 h-full w-full -scale-x-100" />
-                </>
+
+              {/* The <video> element is never shown directly — it's only a
+                  decode source for the paint loop above, which draws every
+                  frame onto the visible canvas. Keeping it off-screen
+                  (rather than display:none) keeps browsers from pausing
+                  decode to save power. */}
+              <video
+                ref={videoRef}
+                muted
+                playsInline
+                webkit-playsinline="true"
+                className="absolute -left-full -top-full h-px w-px opacity-0"
+              />
+              <canvas
+                ref={canvasRef}
+                className={cn(
+                  'h-full w-full object-cover',
+                  (cameraState === 'loading' || cameraState === 'error') && 'hidden'
+                )}
+              />
+
+              {showFrameWarning && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/95 p-6 text-center">
+                  <ShieldAlert className="h-8 w-8 text-amber-400" />
+                  {blackFrames && !noFrames && !trackMuted ? (
+                    <p className="max-w-sm text-sm leading-relaxed text-white/90">
+                      กล้องเชื่อมต่อและส่งภาพมาจริง แต่เนื้อหาของภาพเป็นสีดำสนิท — ไม่ใช่ปัญหาจากตัวแอปนี้
+                      แต่เป็นระบบปฏิบัติการหรือซอฟต์แวร์ความปลอดภัยของเครื่องนี้เองที่ปิดกั้นภาพจริงไว้เฉพาะตอนใช้งานผ่านเบราว์เซอร์
+                      (พบได้ในบางเครื่องที่มีนโยบายองค์กรหรือแอนตี้ไวรัสควบคุมกล้องอย่างเข้มงวด) แนะนำให้ใช้
+                      &quot;เช็คอินแบบ Manual&quot; ด้านขวาแทนสำหรับเครื่องนี้ไปก่อน
+                    </p>
+                  ) : (
+                    <p className="max-w-sm text-sm leading-relaxed text-white/90">
+                      เชื่อมต่อกล้องสำเร็จ แต่ไม่มีสัญญาณภาพส่งมาเลย — มักเกิดจากซอฟต์แวร์ป้องกันเว็บแคม (แอนตี้ไวรัส) บล็อกภาพไว้
+                      ทั้งที่อนุญาต permission แล้ว หรือกล้องถูกปิดบัง/มีฝาปิดอยู่ ลองปิดการป้องกันเว็บแคมชั่วคราว หรือใช้
+                      &quot;เช็คอินแบบ Manual&quot; ด้านขวาแทนได้เลย
+                    </p>
+                  )}
+                </div>
               )}
 
               {feedback?.kind === 'success' && (
@@ -382,9 +504,8 @@ export default function FaceScanner() {
                 <li>มองตรงเข้ากล้องและอยู่ห่างประมาณ 40-60 ซม.</li>
                 <li>สมาชิกต้องลงทะเบียนใบหน้าในหน้า &quot;จัดการสมาชิก&quot; ก่อน</li>
                 <li>
-                  ถ้าภาพจากกล้องเป็นสีดำสนิท เครื่องอาจมีกล้องมากกว่า 1 ตัว
-                  (เช่น กล้อง Windows Hello แบบอินฟราเรดสำหรับล็อกอิน ซึ่งจะมืดในสภาพแสงปกติ)
-                  ลองกดเลือกกล้องอื่นจากเมนู &quot;เลือกกล้อง&quot; ด้านบนวิดีโอ
+                  ถ้าภาพจากกล้องยังคงมืดสนิท ลองเลือกกล้องอื่นจากเมนู &quot;เลือกกล้อง&quot; ด้านบนวิดีโอ
+                  หรือปิดโปรแกรมป้องกันเว็บแคมชั่วคราว
                 </li>
               </ul>
             </div>
