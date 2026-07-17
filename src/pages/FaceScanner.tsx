@@ -13,7 +13,15 @@ import {
   Camera,
   CameraOff,
   Search,
+  SwitchCamera,
 } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useAppData } from '@/hooks/useAppData'
 import { recordCheckin, hasCheckedInToday } from '@/lib/store'
 import {
@@ -71,8 +79,22 @@ export default function FaceScanner() {
   const [errorMsg, setErrorMsg] = useState('')
   const [feedback, setFeedback] = useState<ScanFeedback>(null)
   const [manualQuery, setManualQuery] = useState('')
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  const [activeDeviceId, setActiveDeviceId] = useState<string | undefined>(undefined)
 
-  const startCamera = useCallback(async () => {
+  // Refreshes the labeled device list — labels are only populated once
+  // permission has been granted at least once, so this is called again
+  // right after a successful getUserMedia.
+  const refreshDeviceList = useCallback(async () => {
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices()
+      setDevices(list.filter((d) => d.kind === 'videoinput'))
+    } catch {
+      // non-critical: the camera switcher just won't show if this fails
+    }
+  }, [])
+
+  const startCamera = useCallback(async (deviceId?: string) => {
     setCameraState('loading')
     setErrorMsg('')
     try {
@@ -84,19 +106,25 @@ export default function FaceScanner() {
       setCameraState('error')
       return
     }
+    streamRef.current?.getTracks().forEach((t) => t.stop())
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' },
+      })
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
       }
+      const track = stream.getVideoTracks()[0]
+      setActiveDeviceId(track?.getSettings().deviceId ?? deviceId)
       setCameraState('ready')
+      refreshDeviceList()
     } catch {
       setErrorMsg('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง หรือใช้ "เช็คอินแบบ Manual" แทน')
       setCameraState('error')
     }
-  }, [])
+  }, [refreshDeviceList])
 
   const stopCamera = useCallback(() => {
     if (timerRef.current) window.clearInterval(timerRef.current)
@@ -223,22 +251,39 @@ export default function FaceScanner() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
         <Card className="border-border/70 shadow-soft lg:col-span-3">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle className="font-display text-base">กล้องสแกนใบหน้า</CardTitle>
               <CardDescription>
                 สมาชิกที่ลงทะเบียนใบหน้าแล้ว {registeredMembers.length} / {members.length} คน
               </CardDescription>
             </div>
-            {cameraState === 'ready' ? (
-              <Button size="sm" variant="outline" onClick={stopCamera} className="gap-1.5">
-                <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
-              </Button>
-            ) : (
-              <Button size="sm" variant="outline" onClick={startCamera} className="gap-1.5">
-                <Camera className="h-3.5 w-3.5" /> เปิดกล้อง
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {cameraState === 'ready' && devices.length > 1 && (
+                <Select value={activeDeviceId} onValueChange={(id) => startCamera(id)}>
+                  <SelectTrigger className="h-8 w-[168px] text-xs">
+                    <SwitchCamera className="mr-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <SelectValue placeholder="เลือกกล้อง" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {devices.map((d, i) => (
+                      <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
+                        {d.label || `กล้อง ${i + 1}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {cameraState === 'ready' ? (
+                <Button size="sm" variant="outline" onClick={stopCamera} className="gap-1.5">
+                  <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => startCamera()} className="gap-1.5">
+                  <Camera className="h-3.5 w-3.5" /> เปิดกล้อง
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-2xl bg-slate-900">
@@ -252,7 +297,7 @@ export default function FaceScanner() {
                 <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
                   <AlertTriangle className="h-8 w-8 text-amber-400" />
                   <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
-                  <Button size="sm" variant="secondary" onClick={startCamera} className="mt-1 gap-1.5">
+                  <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 gap-1.5">
                     <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
                   </Button>
                 </div>
@@ -336,6 +381,11 @@ export default function FaceScanner() {
                 <li>ให้แสงส่องหน้าอย่างเพียงพอ หลีกเลี่ยงแสงย้อน</li>
                 <li>มองตรงเข้ากล้องและอยู่ห่างประมาณ 40-60 ซม.</li>
                 <li>สมาชิกต้องลงทะเบียนใบหน้าในหน้า &quot;จัดการสมาชิก&quot; ก่อน</li>
+                <li>
+                  ถ้าภาพจากกล้องเป็นสีดำสนิท เครื่องอาจมีกล้องมากกว่า 1 ตัว
+                  (เช่น กล้อง Windows Hello แบบอินฟราเรดสำหรับล็อกอิน ซึ่งจะมืดในสภาพแสงปกติ)
+                  ลองกดเลือกกล้องอื่นจากเมนู &quot;เลือกกล้อง&quot; ด้านบนวิดีโอ
+                </li>
               </ul>
             </div>
           </CardContent>

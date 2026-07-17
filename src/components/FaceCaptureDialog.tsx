@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { ScanFace, Loader2, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react'
+import { ScanFace, Loader2, CheckCircle2, AlertTriangle, RotateCcw, SwitchCamera } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { loadFaceModels, detectFaceWithDescriptor } from '@/lib/faceEngine'
 import { cn } from '@/lib/utils'
 
@@ -24,55 +25,66 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
   const [errorMsg, setErrorMsg] = useState('')
   const [captured, setCaptured] = useState<{ descriptor: number[]; photo: string } | null>(null)
   const [faceDetected, setFaceDetected] = useState(false)
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  const [activeDeviceId, setActiveDeviceId] = useState<string | undefined>(undefined)
 
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setStage('loading-models')
-    setCaptured(null)
-    setErrorMsg('')
+  const refreshDeviceList = useCallback(async () => {
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices()
+      setDevices(list.filter((d) => d.kind === 'videoinput'))
+    } catch {
+      // non-critical: the camera switcher just won't show if this fails
+    }
+  }, [])
 
-    async function start() {
+  const startCamera = useCallback(
+    async (deviceId?: string) => {
+      setStage('loading-models')
+      setErrorMsg('')
       try {
         await loadFaceModels()
       } catch {
-        if (!cancelled) {
-          setErrorMsg(
-            'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ (อาจเกิดจากข้อจำกัดเครือข่ายในหน้าตัวอย่างนี้) กรุณารันโปรเจกต์นี้ภายนอกเพื่อใช้งานกล้องจริง หรือใช้การเช็คอินแบบ Manual แทน'
-          )
-          setStage('camera-error')
-        }
+        setErrorMsg(
+          'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ (อาจเกิดจากข้อจำกัดเครือข่ายในหน้าตัวอย่างนี้) กรุณารันโปรเจกต์นี้ภายนอกเพื่อใช้งานกล้องจริง หรือใช้การเช็คอินแบบ Manual แทน'
+        )
+        setStage('camera-error')
         return
       }
+      streamRef.current?.getTracks().forEach((t) => t.stop())
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop())
-          return
-        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' },
+        })
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           await videoRef.current.play()
         }
+        const track = stream.getVideoTracks()[0]
+        setActiveDeviceId(track?.getSettings().deviceId ?? deviceId)
         setStage('scanning')
+        refreshDeviceList()
         detectLoop()
       } catch {
-        if (!cancelled) {
-          setErrorMsg('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง หรือใช้เบราว์เซอร์ที่รองรับ')
-          setStage('camera-error')
-        }
+        setErrorMsg('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง หรือใช้เบราว์เซอร์ที่รองรับ')
+        setStage('camera-error')
       }
-    }
+    },
+    [refreshDeviceList]
+  )
 
-    start()
+  useEffect(() => {
+    if (!open) return
+    setCaptured(null)
+    setErrorMsg('')
+    startCamera()
 
     return () => {
-      cancelled = true
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       streamRef.current?.getTracks().forEach((t) => t.stop())
       streamRef.current = null
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   function detectLoop() {
@@ -138,24 +150,7 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
 
   function handleRetake() {
     setCaptured(null)
-    setStage('loading-models')
-    onOpenChange(true)
-    // Re-trigger effect by toggling open externally is complex; simplest: restart manually
-    ;(async () => {
-      try {
-        await loadFaceModels()
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-        streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          await videoRef.current.play()
-        }
-        setStage('scanning')
-        detectLoop()
-      } catch {
-        setStage('camera-error')
-      }
-    })()
+    startCamera(activeDeviceId)
   }
 
   return (
@@ -168,6 +163,22 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
           </DialogTitle>
           <DialogDescription>สำหรับสมาชิก: {memberName}</DialogDescription>
         </DialogHeader>
+
+        {stage === 'scanning' && devices.length > 1 && (
+          <Select value={activeDeviceId} onValueChange={(id) => startCamera(id)}>
+            <SelectTrigger className="h-8 text-xs">
+              <SwitchCamera className="mr-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <SelectValue placeholder="เลือกกล้อง" />
+            </SelectTrigger>
+            <SelectContent>
+              {devices.map((d, i) => (
+                <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
+                  {d.label || `กล้อง ${i + 1}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <div className="relative mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-2xl bg-slate-900">
           {stage === 'loading-models' && (
@@ -214,6 +225,12 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
             </>
           )}
         </div>
+
+        {stage === 'scanning' && (
+          <p className="text-center text-xs text-muted-foreground">
+            ถ้าภาพเป็นสีดำสนิท ลองเลือกกล้องอื่นจากเมนูด้านบน (บางเครื่องมีกล้อง IR สำหรับ Windows Hello ด้วย)
+          </p>
+        )}
 
         {errorMsg && stage === 'scanning' && (
           <p className="text-center text-xs text-destructive">{errorMsg}</p>
