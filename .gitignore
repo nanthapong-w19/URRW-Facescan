@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Supabase connection details (the anon key is safe for the browser bundle,
+# but keep it out of git anyway — copy .env.example to .env instead)
+.env
+.env.local
+
 # Bundling artifacts (from the Parcel + html-inline single-file build)
 bundle.html
 .parcel-cache

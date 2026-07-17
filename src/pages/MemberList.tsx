@@ -82,33 +82,46 @@ export default function MemberList() {
     setFormOpen(true)
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.employeeId.trim() || !form.name.trim() || !form.email.trim()) {
       toast.error('กรุณากรอกข้อมูลให้ครบถ้วน')
       return
     }
-    if (editingId) {
-      updateMember(editingId, { ...form })
-      toast.success('แก้ไขข้อมูลสมาชิกเรียบร้อย')
-    } else {
-      addMember({ ...form })
-      toast.success('เพิ่มสมาชิกใหม่เรียบร้อย')
+    try {
+      if (editingId) {
+        await updateMember(editingId, { ...form })
+        toast.success('แก้ไขข้อมูลสมาชิกเรียบร้อย')
+      } else {
+        await addMember({ ...form })
+        toast.success('เพิ่มสมาชิกใหม่เรียบร้อย')
+      }
+      setFormOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ')
     }
-    setFormOpen(false)
   }
 
-  function handleConfirmDelete() {
+  async function handleConfirmDelete() {
     if (!deleteTarget) return
-    deleteMember(deleteTarget.id)
-    toast.success(`ลบข้อมูลของ ${deleteTarget.name} แล้ว`)
-    setDeleteTarget(null)
+    try {
+      await deleteMember(deleteTarget.id)
+      toast.success(`ลบข้อมูลของ ${deleteTarget.name} แล้ว`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ลบข้อมูลไม่สำเร็จ')
+    } finally {
+      setDeleteTarget(null)
+    }
   }
 
-  function handleFaceCaptured(descriptor: number[], photo: string) {
+  async function handleFaceCaptured(descriptor: number[], photo: string) {
     if (!faceDialogMember) return
-    registerFace(faceDialogMember.id, descriptor, photo)
-    toast.success(`ลงทะเบียนใบหน้าของ ${faceDialogMember.name} สำเร็จ`)
+    try {
+      await registerFace(faceDialogMember.id, descriptor, photo)
+      toast.success(`ลงทะเบียนใบหน้าของ ${faceDialogMember.name} สำเร็จ`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ลงทะเบียนใบหน้าไม่สำเร็จ')
+    }
   }
 
   return (
@@ -184,7 +197,7 @@ export default function MemberList() {
                       {m.photo ? (
                         <img src={m.photo} alt={m.name} className="h-9 w-9 rounded-full object-cover" />
                       ) : (
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-teal-500/15 to-amber-500/15 font-display text-sm font-semibold text-teal-700 dark:text-teal-400">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary/15 to-accent/25 font-display text-sm font-semibold text-primary">
                           {m.name.charAt(0)}
                         </div>
                       )}

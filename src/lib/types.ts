@@ -28,3 +28,30 @@ export interface AppData {
   members: Member[]
   checkins: CheckinRecord[]
 }
+
+// Shape of a row in the `facein_members` Postgres table (snake_case, as
+// Supabase/PostgREST returns it) before it's mapped to the app-facing
+// `Member` shape above.
+export interface MemberRow {
+  id: string
+  employee_id: string
+  name: string
+  email: string | null
+  department: string
+  photo_url: string | null
+  face_descriptor: number[] | null
+  registered_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Shape of a row in `facein_checkins`, joined with the member's name/department
+// so the dashboard's recent-activity feed doesn't need a second round trip.
+export interface CheckinRow {
+  id: string
+  member_id: string
+  checked_in_at: string
+  method: CheckinMethod
+  confidence: number | null
+  facein_members: { name: string; department: string } | null
+}

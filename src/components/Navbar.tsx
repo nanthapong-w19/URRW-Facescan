@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, ScanFace, Radar } from 'lucide-react'
+import { LayoutDashboard, Users, ScanFace } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const links = [
@@ -13,12 +13,10 @@ export default function Navbar() {
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-teal-600 text-primary-foreground shadow-soft">
-            <Radar className="h-5 w-5" strokeWidth={2.25} />
-          </div>
+          <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-10 w-10 object-contain" />
           <div className="leading-tight">
             <p className="font-display text-[15px] font-bold tracking-tight text-foreground">FaceIn</p>
-            <p className="text-[11px] text-muted-foreground">ระบบเช็คอินด้วยใบหน้า</p>
+            <p className="text-[11px] text-muted-foreground">ระบบเช็คอินราชกัญญาฯ</p>
           </div>
         </div>
 

@@ -1,205 +1,157 @@
-import type { Member, CheckinRecord, CheckinMethod } from './types'
+import { supabase } from './supabaseClient'
+import type { Member, CheckinRecord, CheckinMethod, MemberRow, CheckinRow } from './types'
 
-const MEMBERS_KEY = 'facecheckin_members_v1'
-const CHECKINS_KEY = 'facecheckin_checkins_v1'
+// Data layer for the app — backed by Supabase (Postgres) instead of
+// localStorage, so every kiosk device reads and writes the same shared
+// member roster and check-in history in real time. All functions here are
+// async network calls; `src/hooks/useAppData.ts` is what wraps them with
+// React state + a Realtime subscription for "live" UI updates.
+//
+// Member/CheckinRecord (camelCase) is the shape the rest of the app already
+// uses; MemberRow/CheckinRow (snake_case) is what Postgres/PostgREST
+// actually returns. The mapping happens only in this file so no component
+// had to change its field names during the migration off localStorage.
 
-// Tiny pub/sub so pages re-render "in real time" whenever data changes,
-// even across components that aren't directly connected via props.
-type Listener = () => void
-const listeners = new Set<Listener>()
-export function subscribe(fn: Listener) {
-  listeners.add(fn)
-  return () => listeners.delete(fn)
-}
-function notify() {
-  listeners.forEach((fn) => fn())
-}
+const CHECKINS_FETCH_LIMIT = 500 // recent-history window; plenty for a live feed + today's stats
 
-function uid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
-}
-
-function seedMembers(): Member[] {
-  const now = new Date()
-  const iso = (daysAgo: number) => {
-    const d = new Date(now)
-    d.setDate(d.getDate() - daysAgo)
-    return d.toISOString()
-  }
-  return [
-    {
-      id: uid(),
-      employeeId: 'EMP-001',
-      name: 'Aran Suksawat',
-      email: 'aran.s@company.com',
-      department: 'Engineering',
-      faceStatus: 'unregistered',
-      faceDescriptor: null,
-      photo: null,
-      createdAt: iso(30),
-    },
-    {
-      id: uid(),
-      employeeId: 'EMP-002',
-      name: 'Nichapa Wongsakul',
-      email: 'nichapa.w@company.com',
-      department: 'Design',
-      faceStatus: 'unregistered',
-      faceDescriptor: null,
-      photo: null,
-      createdAt: iso(28),
-    },
-    {
-      id: uid(),
-      employeeId: 'EMP-003',
-      name: 'Kittipong Chai',
-      email: 'kittipong.c@company.com',
-      department: 'Marketing',
-      faceStatus: 'unregistered',
-      faceDescriptor: null,
-      photo: null,
-      createdAt: iso(20),
-    },
-    {
-      id: uid(),
-      employeeId: 'EMP-004',
-      name: 'Suthida Ratana',
-      email: 'suthida.r@company.com',
-      department: 'HR',
-      faceStatus: 'unregistered',
-      faceDescriptor: null,
-      photo: null,
-      createdAt: iso(15),
-    },
-    {
-      id: uid(),
-      employeeId: 'EMP-005',
-      name: 'Panupong Intharak',
-      email: 'panupong.i@company.com',
-      department: 'Engineering',
-      faceStatus: 'unregistered',
-      faceDescriptor: null,
-      photo: null,
-      createdAt: iso(10),
-    },
-    {
-      id: uid(),
-      employeeId: 'EMP-006',
-      name: 'Waraporn Srisuk',
-      email: 'waraporn.s@company.com',
-      department: 'Finance',
-      faceStatus: 'unregistered',
-      faceDescriptor: null,
-      photo: null,
-      createdAt: iso(5),
-    },
-  ]
-}
-
-function readJSON<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return fallback
-    return JSON.parse(raw) as T
-  } catch {
-    return fallback
+function rowToMember(row: MemberRow): Member {
+  return {
+    id: row.id,
+    employeeId: row.employee_id,
+    name: row.name,
+    email: row.email ?? '',
+    department: row.department,
+    faceStatus: row.face_descriptor ? 'registered' : 'unregistered',
+    faceDescriptor: row.face_descriptor ?? null,
+    photo: row.photo_url ?? null,
+    createdAt: row.created_at,
   }
 }
 
-function writeJSON(key: string, value: unknown) {
-  localStorage.setItem(key, JSON.stringify(value))
-}
-
-export function initStore() {
-  if (!localStorage.getItem(MEMBERS_KEY)) {
-    writeJSON(MEMBERS_KEY, seedMembers())
+function rowToCheckin(row: CheckinRow): CheckinRecord {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    name: row.facein_members?.name ?? 'ไม่ทราบชื่อ',
+    department: row.facein_members?.department ?? '',
+    time: row.checked_in_at,
+    method: row.method,
+    confidence: row.confidence ?? undefined,
   }
-  if (!localStorage.getItem(CHECKINS_KEY)) {
-    writeJSON(CHECKINS_KEY, [])
+}
+
+/** Friendlier Thai messages for the Postgres/PostgREST errors this app can actually hit. */
+function describeDbError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  if (message.includes('duplicate key value') || message.includes('facein_members_employee_id_key')) {
+    return 'รหัสพนักงานนี้มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น'
   }
+  if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+    return 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่'
+  }
+  return `เกิดข้อผิดพลาดในการบันทึกข้อมูล: ${message}`
 }
 
-export function getMembers(): Member[] {
-  return readJSON<Member[]>(MEMBERS_KEY, [])
+export async function getMembers(): Promise<Member[]> {
+  const { data, error } = await supabase
+    .from('facein_members')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(describeDbError(error))
+  return (data as MemberRow[]).map(rowToMember)
 }
 
-export function getCheckins(): CheckinRecord[] {
-  return readJSON<CheckinRecord[]>(CHECKINS_KEY, [])
+export async function getCheckins(): Promise<CheckinRecord[]> {
+  const { data, error } = await supabase
+    .from('facein_checkins')
+    .select('*, facein_members(name, department)')
+    .order('checked_in_at', { ascending: false })
+    .limit(CHECKINS_FETCH_LIMIT)
+  if (error) throw new Error(describeDbError(error))
+  return (data as unknown as CheckinRow[]).map(rowToCheckin)
 }
 
-export function addMember(input: {
+export async function addMember(input: {
   employeeId: string
   name: string
   email: string
   department: string
-}): Member {
-  const members = getMembers()
-  const member: Member = {
-    id: uid(),
-    employeeId: input.employeeId,
-    name: input.name,
-    email: input.email,
-    department: input.department,
-    faceStatus: 'unregistered',
-    faceDescriptor: null,
-    photo: null,
-    createdAt: new Date().toISOString(),
-  }
-  writeJSON(MEMBERS_KEY, [member, ...members])
-  notify()
-  return member
+}): Promise<Member> {
+  const { data, error } = await supabase
+    .from('facein_members')
+    .insert({
+      employee_id: input.employeeId,
+      name: input.name,
+      email: input.email,
+      department: input.department,
+    })
+    .select('*')
+    .single()
+  if (error) throw new Error(describeDbError(error))
+  return rowToMember(data as MemberRow)
 }
 
-export function updateMember(id: string, patch: Partial<Member>) {
-  const members = getMembers().map((m) => (m.id === id ? { ...m, ...patch } : m))
-  writeJSON(MEMBERS_KEY, members)
-  notify()
+export async function updateMember(
+  id: string,
+  patch: Partial<Pick<Member, 'employeeId' | 'name' | 'email' | 'department'>>
+): Promise<Member> {
+  const dbPatch: Record<string, unknown> = {}
+  if (patch.employeeId !== undefined) dbPatch.employee_id = patch.employeeId
+  if (patch.name !== undefined) dbPatch.name = patch.name
+  if (patch.email !== undefined) dbPatch.email = patch.email
+  if (patch.department !== undefined) dbPatch.department = patch.department
+
+  const { data, error } = await supabase
+    .from('facein_members')
+    .update(dbPatch)
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw new Error(describeDbError(error))
+  return rowToMember(data as MemberRow)
 }
 
-export function deleteMember(id: string) {
-  const members = getMembers().filter((m) => m.id !== id)
-  writeJSON(MEMBERS_KEY, members)
-  notify()
+export async function deleteMember(id: string): Promise<void> {
+  const { error } = await supabase.from('facein_members').delete().eq('id', id)
+  if (error) throw new Error(describeDbError(error))
 }
 
-export function registerFace(id: string, descriptor: number[], photo: string) {
-  updateMember(id, { faceStatus: 'registered', faceDescriptor: descriptor, photo })
+export async function registerFace(id: string, descriptor: number[], photo: string): Promise<Member> {
+  const { data, error } = await supabase
+    .from('facein_members')
+    .update({ face_descriptor: descriptor, photo_url: photo, registered_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw new Error(describeDbError(error))
+  return rowToMember(data as MemberRow)
 }
 
-export function recordCheckin(
+export async function recordCheckin(
   member: Pick<Member, 'id' | 'name' | 'department'>,
   method: CheckinMethod,
   confidence?: number
-): CheckinRecord {
-  const checkins = getCheckins()
-  const record: CheckinRecord = {
-    id: uid(),
-    memberId: member.id,
-    name: member.name,
-    department: member.department,
-    time: new Date().toISOString(),
-    method,
-    confidence,
-  }
-  writeJSON(CHECKINS_KEY, [record, ...checkins])
-  notify()
-  return record
+): Promise<CheckinRecord> {
+  const { data, error } = await supabase
+    .from('facein_checkins')
+    .insert({ member_id: member.id, method, confidence: confidence ?? null })
+    .select('*, facein_members(name, department)')
+    .single()
+  if (error) throw new Error(describeDbError(error))
+  return rowToCheckin(data as unknown as CheckinRow)
 }
 
-export function hasCheckedInToday(memberId: string): boolean {
+// --- Pure helpers below: these operate on a `checkins` array that's already
+// loaded in memory (via useAppData), rather than hitting the database again.
+// FaceScanner.tsx calls `hasCheckedInToday` on every detection tick (twice a
+// second), so it must stay a synchronous, local check rather than a query.
+
+export function hasCheckedInToday(checkins: CheckinRecord[], memberId: string): boolean {
   const today = new Date().toDateString()
-  return getCheckins().some(
-    (c) => c.memberId === memberId && new Date(c.time).toDateString() === today
-  )
+  return checkins.some((c) => c.memberId === memberId && new Date(c.time).toDateString() === today)
 }
 
-export function todaysCheckins(): CheckinRecord[] {
+export function todaysCheckins(checkins: CheckinRecord[]): CheckinRecord[] {
   const today = new Date().toDateString()
-  return getCheckins().filter((c) => new Date(c.time).toDateString() === today)
-}
-
-export function resetAllData() {
-  writeJSON(MEMBERS_KEY, seedMembers())
-  writeJSON(CHECKINS_KEY, [])
-  notify()
+  return checkins.filter((c) => new Date(c.time).toDateString() === today)
 }

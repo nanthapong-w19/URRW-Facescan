@@ -20,8 +20,8 @@ function AttendanceDonut({ percent }: { percent: number }) {
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
         <defs>
           <linearGradient id="donutGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="hsl(172 68% 34%)" />
-            <stop offset="100%" stopColor="hsl(28 92% 54%)" />
+            <stop offset="0%" stopColor="hsl(350 62% 30%)" />
+            <stop offset="100%" stopColor="hsl(43 74% 49%)" />
           </linearGradient>
         </defs>
         <circle
@@ -67,7 +67,7 @@ export default function Dashboard() {
   const { members, checkins } = useAppData()
 
   const stats = useMemo(() => {
-    const today = todaysCheckins()
+    const today = todaysCheckins(checkins)
     const uniqueToday = new Set(today.map((c) => c.memberId))
     const total = members.length
     const rate = total > 0 ? Math.round((uniqueToday.size / total) * 100) : 0
@@ -77,7 +77,7 @@ export default function Dashboard() {
       rate,
       registered: members.filter((m) => m.faceStatus === 'registered').length,
     }
-  }, [members])
+  }, [members, checkins])
 
   const recent = useMemo(() => checkins.slice(0, 8), [checkins])
 
@@ -108,7 +108,7 @@ export default function Dashboard() {
               <p className="font-display mt-1 text-3xl font-bold text-foreground">{stats.total}</p>
               <p className="mt-1 text-xs text-muted-foreground">{stats.registered} คนลงทะเบียนใบหน้าแล้ว</p>
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-600/10 text-teal-700 dark:text-teal-400">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Users className="h-5 w-5" />
             </div>
           </CardContent>
@@ -123,7 +123,7 @@ export default function Dashboard() {
                 <ArrowUpRight className="h-3.5 w-3.5" /> อัปเดตอัตโนมัติ
               </p>
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/15 text-accent">
               <UserCheck className="h-5 w-5" />
             </div>
           </CardContent>
@@ -136,7 +136,7 @@ export default function Dashboard() {
               <p className="font-display mt-1 text-3xl font-bold text-foreground">{stats.rate}%</p>
               <p className="mt-1 text-xs text-muted-foreground">จากสมาชิกทั้งหมด {stats.total} คน</p>
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-600 dark:text-orange-400">
               <TrendingUp className="h-5 w-5" />
             </div>
           </CardContent>
@@ -151,7 +151,7 @@ export default function Dashboard() {
               </p>
               <p className="mt-1 text-xs text-muted-foreground">ยังไม่เช็คอินวันนี้</p>
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
               <Clock className="h-5 w-5" />
             </div>
           </CardContent>
@@ -168,7 +168,7 @@ export default function Dashboard() {
             <AttendanceDonut percent={stats.rate} />
             <div className="flex w-full items-center justify-around border-t border-border/70 pt-4 text-center">
               <div>
-                <p className="font-display text-lg font-bold text-teal-700 dark:text-teal-400">{stats.checkedInToday}</p>
+                <p className="font-display text-lg font-bold text-primary">{stats.checkedInToday}</p>
                 <p className="text-xs text-muted-foreground">เช็คอินแล้ว</p>
               </div>
               <div className="h-8 w-px bg-border" />
@@ -208,7 +208,7 @@ export default function Dashboard() {
                 {recent.map((c) => (
                   <li key={c.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500/15 to-amber-500/15 font-display text-sm font-semibold text-teal-700 dark:text-teal-400">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/15 to-accent/25 font-display text-sm font-semibold text-primary">
                         {c.name.charAt(0)}
                       </div>
                       <div>
@@ -222,8 +222,8 @@ export default function Dashboard() {
                         className={cn(
                           'gap-1 border-none text-xs font-normal',
                           c.method === 'face'
-                            ? 'bg-teal-600/10 text-teal-700 dark:text-teal-400'
-                            : 'bg-sky-500/10 text-sky-600'
+                            ? 'bg-primary/10 text-primary'
+                            : 'bg-muted text-muted-foreground'
                         )}
                       >
                         <CircleCheck className="h-3 w-3" />

@@ -1,29 +1,49 @@
-import { useEffect, useState, useCallback } from 'react'
-import { getMembers, getCheckins, subscribe } from '@/lib/store'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { toast } from 'sonner'
+import { supabase } from '@/lib/supabaseClient'
+import { getMembers, getCheckins } from '@/lib/store'
 import type { Member, CheckinRecord } from '@/lib/types'
 
 export function useAppData() {
-  const [members, setMembers] = useState<Member[]>(getMembers())
-  const [checkins, setCheckins] = useState<CheckinRecord[]>(getCheckins())
+  const [members, setMembers] = useState<Member[]>([])
+  const [checkins, setCheckins] = useState<CheckinRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const hasShownErrorRef = useRef(false)
 
-  const refresh = useCallback(() => {
-    setMembers(getMembers())
-    setCheckins(getCheckins())
+  const refresh = useCallback(async () => {
+    try {
+      const [nextMembers, nextCheckins] = await Promise.all([getMembers(), getCheckins()])
+      setMembers(nextMembers)
+      setCheckins(nextCheckins)
+    } catch (err) {
+      // Avoid spamming toasts if the DB is unreachable and every realtime
+      // event retriggers a failing refetch — show it once per session.
+      if (!hasShownErrorRef.current) {
+        hasShownErrorRef.current = true
+        toast.error(err instanceof Error ? err.message : 'ไม่สามารถโหลดข้อมูลจากฐานข้อมูลได้')
+      }
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
     refresh()
-    const unsub = subscribe(refresh)
-    // Also refresh when the tab regains focus, in case data changed
-    // in another tab (simulated multi-kiosk realtime).
-    window.addEventListener('focus', refresh)
-    window.addEventListener('storage', refresh)
+
+    // Subscribe to Postgres changes on both tables so every open kiosk/tab
+    // reflects new members, edits, and check-ins the moment they happen
+    // anywhere else — this is what makes the dashboard's "Live" feed live
+    // across devices, not just within one browser tab.
+    const channel = supabase
+      .channel('facein-live-data')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'facein_members' }, () => refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'facein_checkins' }, () => refresh())
+      .subscribe()
+
     return () => {
-      unsub()
-      window.removeEventListener('focus', refresh)
-      window.removeEventListener('storage', refresh)
+      supabase.removeChannel(channel)
     }
   }, [refresh])
 
-  return { members, checkins, refresh }
+  return { members, checkins, loading, refresh }
 }

@@ -69,7 +69,7 @@ const SCAN_INTERVAL_MS = 500
 const REPEAT_COOLDOWN_MS = 15000
 
 export default function FaceScanner() {
-  const { members } = useAppData()
+  const { members, checkins } = useAppData()
   const registeredMembers = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
 
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -287,14 +287,21 @@ export default function FaceScanner() {
       if (isMatch) {
         const member = best!.member
         const lastTime = lastCheckinRef.current[member.id] ?? 0
-        const alreadyToday = hasCheckedInToday(member.id)
+        const alreadyToday = hasCheckedInToday(checkins, member.id)
         if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !alreadyToday) {
           lastCheckinRef.current[member.id] = Date.now()
-          recordCheckin(member, 'face', distanceToConfidence(best!.distance))
-          setFeedback({ kind: 'success', name: member.name, department: member.department })
-          playSuccessChime()
-          toast.success(`เช็คอินสำเร็จ: ${member.name}`, { duration: 3500 })
-          window.setTimeout(() => setFeedback(null), 3200)
+          try {
+            await recordCheckin(member, 'face', distanceToConfidence(best!.distance))
+            setFeedback({ kind: 'success', name: member.name, department: member.department })
+            playSuccessChime()
+            toast.success(`เช็คอินสำเร็จ: ${member.name}`, { duration: 3500 })
+            window.setTimeout(() => setFeedback(null), 3200)
+          } catch (err) {
+            // Allow retrying on the next tick instead of getting stuck
+            // thinking this member already checked in.
+            delete lastCheckinRef.current[member.id]
+            toast.error(err instanceof Error ? err.message : 'บันทึกการเช็คอินไม่สำเร็จ')
+          }
         }
       }
     }, SCAN_INTERVAL_MS)
@@ -302,7 +309,7 @@ export default function FaceScanner() {
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current)
     }
-  }, [cameraState, registeredMembers])
+  }, [cameraState, registeredMembers, checkins])
 
   const manualMatches = useMemo(() => {
     if (!manualQuery.trim()) return []
@@ -312,15 +319,19 @@ export default function FaceScanner() {
       .slice(0, 5)
   }, [members, manualQuery])
 
-  function handleManualCheckin(member: Member) {
-    if (hasCheckedInToday(member.id)) {
+  async function handleManualCheckin(member: Member) {
+    if (hasCheckedInToday(checkins, member.id)) {
       toast.info(`${member.name} เช็คอินไปแล้ววันนี้`)
       setManualQuery('')
       return
     }
-    recordCheckin(member, 'manual')
-    toast.success(`เช็คอินสำเร็จ (Manual): ${member.name}`)
-    playSuccessChime()
+    try {
+      await recordCheckin(member, 'manual')
+      toast.success(`เช็คอินสำเร็จ (Manual): ${member.name}`)
+      playSuccessChime()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'บันทึกการเช็คอินไม่สำเร็จ')
+    }
     setManualQuery('')
   }
 
@@ -466,7 +477,7 @@ export default function FaceScanner() {
                 <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">ไม่พบสมาชิกที่ตรงกัน</p>
               )}
               {manualMatches.map((m) => {
-                const checkedIn = hasCheckedInToday(m.id)
+                const checkedIn = hasCheckedInToday(checkins, m.id)
                 return (
                   <button
                     key={m.id}
