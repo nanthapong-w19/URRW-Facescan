@@ -28,7 +28,13 @@ export default function Navbar() {
         <div className="flex items-center gap-2.5">
           <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-10 w-10 object-contain" />
           <div className="leading-tight">
-            <p className="font-display text-[15px] font-bold tracking-tight text-foreground">FaceIn</p>
+            {/* "FaceIn" wordmark given the same maroon-to-gold gradient +
+                drop-shadow treatment as the login page's card title (see
+                Login.tsx, round 34) so the brand mark reads consistently
+                with some depth wherever it appears, not just on /#/login. */}
+            <p className="font-display bg-gradient-to-r from-primary via-[hsl(350_65%_42%)] to-accent bg-clip-text text-[15px] font-bold tracking-tight text-transparent drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
+              FaceIn
+            </p>
             <p className="text-[11px] text-muted-foreground">ระบบเช็คอินราชกัญญาฯ</p>
           </div>
         </div>

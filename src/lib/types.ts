@@ -9,7 +9,6 @@ export interface Member {
   id: string
   employeeId: string
   name: string
-  email: string
   department: string // กลุ่มสาระการเรียนรู้ (learning-area/subject group)
   position: string // ตำแหน่ง (job position/rank, e.g. ครู, ครูอัตราจ้าง, ผู้อำนวยการ)
   role: MemberRole
@@ -39,6 +38,13 @@ export interface AppData {
 // Shape of a row in the `facein_members` Postgres table (snake_case, as
 // Supabase/PostgREST returns it) before it's mapped to the app-facing
 // `Member` shape above.
+//
+// NOTE: `email` is kept here because the underlying `facein_members` table
+// still has this column (and any existing rows may still have real email
+// addresses stored in it) — dropping the column outright would permanently
+// destroy that data. The app-facing `Member` type above no longer exposes
+// `email` at all (removed by request), so this column is simply never read
+// from or written to by the app anymore; it's effectively orphaned data.
 export interface MemberRow {
   id: string
   employee_id: string

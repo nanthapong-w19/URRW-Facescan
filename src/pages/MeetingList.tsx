@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { CalendarDays, Users, Plus, MapPin, Loader2, LogOut, CalendarClock, CheckCircle2 } from 'lucide-react'
+import { CalendarDays, Users, Plus, MapPin, Loader2, CalendarClock, CheckCircle2 } from 'lucide-react'
 import { getMeetings } from '@/lib/store'
 import { useAdminAuth } from '@/lib/adminAuth'
 import type { Meeting } from '@/lib/types'
@@ -32,8 +32,7 @@ function formatMeetingTime(iso: string | null) {
 }
 
 export default function MeetingList() {
-  const { admin, logout } = useAdminAuth()
-  const navigate = useNavigate()
+  const { admin } = useAdminAuth()
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -52,24 +51,21 @@ export default function MeetingList() {
     }
   }, [])
 
-  function handleLogout() {
-    logout()
-    navigate('/login')
-  }
-
   return (
     <div className="space-y-6">
+      {/* The "ออกจากระบบ" (logout) button that used to sit here was removed
+          by request (round 38) — the navbar already has its own logout
+          button whenever an admin session is active, so this page-level
+          duplicate was redundant. This header now only shows the page
+          title, who's logged in, and the "create meeting" action. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">การประชุม</h1>
+          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">การประชุม</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             เข้าสู่ระบบในฐานะ <span className="font-medium text-foreground">{admin?.name}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleLogout} className="gap-1.5">
-            <LogOut className="h-3.5 w-3.5" /> ออกจากระบบ
-          </Button>
           <Button asChild size="sm" className="gap-1.5">
             <Link to="/meetings/new">
               <Plus className="h-3.5 w-3.5" /> สร้างการประชุมใหม่

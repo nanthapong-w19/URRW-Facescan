@@ -31,7 +31,6 @@ function rowToMember(row: MemberRow): Member {
     id: row.id,
     employeeId: row.employee_id,
     name: row.name,
-    email: row.email ?? '',
     department: row.department,
     position: row.position ?? '',
     role: row.role === 'admin' ? 'admin' : 'user',
@@ -125,7 +124,6 @@ export async function getCheckins(): Promise<CheckinRecord[]> {
 export async function addMember(input: {
   employeeId: string
   name: string
-  email: string
   department: string
   position: string
   role: MemberRole
@@ -135,7 +133,6 @@ export async function addMember(input: {
     .insert({
       employee_id: input.employeeId,
       name: input.name,
-      email: input.email,
       department: input.department,
       position: input.position,
       role: input.role,
@@ -148,12 +145,11 @@ export async function addMember(input: {
 
 export async function updateMember(
   id: string,
-  patch: Partial<Pick<Member, 'employeeId' | 'name' | 'email' | 'department' | 'position' | 'role'>>
+  patch: Partial<Pick<Member, 'employeeId' | 'name' | 'department' | 'position' | 'role'>>
 ): Promise<Member> {
   const dbPatch: Record<string, unknown> = {}
   if (patch.employeeId !== undefined) dbPatch.employee_id = patch.employeeId
   if (patch.name !== undefined) dbPatch.name = patch.name
-  if (patch.email !== undefined) dbPatch.email = patch.email
   if (patch.department !== undefined) dbPatch.department = patch.department
   if (patch.position !== undefined) dbPatch.position = patch.position
   if (patch.role !== undefined) dbPatch.role = patch.role

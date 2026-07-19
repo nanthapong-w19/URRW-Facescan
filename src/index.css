@@ -1,4 +1,13 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap');
+/* IBM Plex Sans Thai: body copy — a modern, highly-legible Thai+Latin
+   family (the Thai-script sibling of IBM's Plex superfamily) so ordinary
+   Thai text finally renders in a designed typeface instead of falling
+   back to whatever generic sans the OS ships (the old Plus Jakarta Sans/
+   Sora pairing had zero Thai glyph coverage, so ~95% of this site's text
+   was silently rendering outside the intended type system).
+   Prompt: headings/font-display — a contemporary geometric Thai+Latin
+   display face, pairs with the maroon/gold civic theme without tipping
+   into a purely decorative "display" font. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Prompt:wght@500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -56,14 +65,94 @@
   * {
     @apply border-border;
   }
+  html {
+    /* Thai vowel/tone marks stack above and below the base consonant, so
+       body copy needs more breathing room than a Latin-only line-height
+       default gives it — 1.6 keeps stacked marks from visually crowding
+       the line above/below. */
+    line-height: 1.6;
+  }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background-color: hsl(var(--accent) / 0.35);
+    color: hsl(var(--foreground));
+  }
+  /* Themed scrollbar (WebKit + Firefox) so the browser chrome matches the
+     maroon/gold system instead of the default flat grey bar. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--primary) / 0.35) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--primary) / 0.3);
+    border-radius: 999px;
+    border: 2px solid hsl(var(--background));
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--primary) / 0.5);
   }
 }
 
 @layer utilities {
   .font-display {
-    font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+    font-family: 'Prompt', 'IBM Plex Sans Thai', ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+/* /#/login's animated เลือดหมู-ขาว-ทอง background (round 36). The base
+   backdrop is an oversized (220% x 220%) diagonal gradient that slowly
+   pans its background-position along one axis, so the hue glides between
+   deep maroon and a brighter gold highlight rather than snapping or
+   scrolling — kept deliberately maroon-dominant (the gold stop is a
+   single narrow band passing through, not half the cycle) so the drift
+   never washes the whole backdrop out to a flat brown. A separate soft
+   cream/white "sheen" glow drifts independently on top of it, standing in
+   for the "ขาว" (white) leg of the tricolor without ever painting large
+   flat areas of bright white (which would fight the near-white cards
+   floating on top of this backdrop for contrast/attention). Both respect
+   prefers-reduced-motion. */
+@keyframes login-gradient-drift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+@keyframes login-sheen-drift {
+  0%,
+  100% {
+    transform: translate3d(-12%, -8%, 0) scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translate3d(14%, 10%, 0) scale(1.2);
+    opacity: 0.65;
+  }
+}
+.animate-login-gradient {
+  background-size: 220% 220%;
+  animation: login-gradient-drift 20s ease-in-out infinite;
+}
+.animate-login-sheen {
+  animation: login-sheen-drift 11s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-login-gradient,
+  .animate-login-sheen {
+    animation: none;
   }
 }

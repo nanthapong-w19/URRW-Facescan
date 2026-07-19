@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import Navbar from '@/components/Navbar'
@@ -33,6 +33,66 @@ function SupabaseSetupNotice() {
   )
 }
 
+// Split out from App so it can call useLocation() — that hook only works
+// inside the <HashRouter>, so this has to render below it, not alongside it.
+function AppShell() {
+  const location = useLocation()
+  // /#/login is a full-screen face-scan kiosk view — the top nav (with its
+  // "เข้าสู่ระบบผู้ดูแล" button, member/meeting links, etc.) doesn't belong
+  // there since the visitor isn't logged in yet and shouldn't be able to
+  // jump elsewhere in the app from this screen.
+  const hideNavbar = location.pathname === '/login'
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div
+        className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[420px] bg-gradient-to-b from-primary/10 via-accent/10 to-transparent dark:from-primary/20 dark:via-transparent"
+        aria-hidden
+      />
+      {!hideNavbar && <Navbar />}
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <Routes>
+          {/* /#/login is now the home page — a kiosk/browser opening the
+              site fresh should land on the face-login scanner, not the
+              dashboard. Dashboard.tsx still exists and still works, just
+              moved off "/" to "/dashboard" so it's reachable by URL
+              rather than being deleted outright. */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/members" element={<MemberList />} />
+          <Route path="/scan" element={<FaceScanner />} />
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/meetings"
+            element={
+              <RequireAdmin>
+                <MeetingList />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/meetings/new"
+            element={
+              <RequireAdmin>
+                <CreateMeeting />
+              </RequireAdmin>
+            }
+          />
+          {/* Deliberately NOT wrapped in RequireAdmin: this is the page a
+              meeting's participants open (e.g. from a shared link/QR
+              code, or on a shared kiosk) to scan their face and check
+              in to that specific meeting — they aren't admins and
+              shouldn't need to log in as one. The delete button inside
+              MeetingDetail is the only part still gated, checked
+              client-side via useAdminAuth(). */}
+          <Route path="/meetings/:id" element={<MeetingDetail />} />
+        </Routes>
+      </main>
+      <Toaster position="top-right" richColors />
+    </div>
+  )
+}
+
 function App() {
   if (!isSupabaseConfigured) {
     return <SupabaseSetupNotice />
@@ -41,52 +101,7 @@ function App() {
   return (
     <AdminAuthProvider>
       <HashRouter>
-        <div className="min-h-screen bg-background">
-          <div
-            className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[420px] bg-gradient-to-b from-primary/10 via-accent/10 to-transparent dark:from-primary/20 dark:via-transparent"
-            aria-hidden
-          />
-          <Navbar />
-          <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-            <Routes>
-              {/* /#/login is now the home page — a kiosk/browser opening the
-                  site fresh should land on the face-login scanner, not the
-                  dashboard. Dashboard.tsx still exists and still works, just
-                  moved off "/" to "/dashboard" so it's reachable by URL
-                  rather than being deleted outright. */}
-              <Route path="/" element={<Navigate to="/login" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/members" element={<MemberList />} />
-              <Route path="/scan" element={<FaceScanner />} />
-              <Route path="/login" element={<Login />} />
-              <Route
-                path="/meetings"
-                element={
-                  <RequireAdmin>
-                    <MeetingList />
-                  </RequireAdmin>
-                }
-              />
-              <Route
-                path="/meetings/new"
-                element={
-                  <RequireAdmin>
-                    <CreateMeeting />
-                  </RequireAdmin>
-                }
-              />
-              {/* Deliberately NOT wrapped in RequireAdmin: this is the page a
-                  meeting's participants open (e.g. from a shared link/QR
-                  code, or on a shared kiosk) to scan their face and check
-                  in to that specific meeting — they aren't admins and
-                  shouldn't need to log in as one. The delete button inside
-                  MeetingDetail is the only part still gated, checked
-                  client-side via useAdminAuth(). */}
-              <Route path="/meetings/:id" element={<MeetingDetail />} />
-            </Routes>
-          </main>
-          <Toaster position="top-right" richColors />
-        </div>
+        <AppShell />
       </HashRouter>
     </AdminAuthProvider>
   )

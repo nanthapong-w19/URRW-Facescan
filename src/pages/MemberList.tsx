@@ -58,7 +58,6 @@ const ROLES: MemberRole[] = ['user', 'admin']
 interface MemberFormState {
   employeeId: string
   name: string
-  email: string
   department: string
   position: string
   role: MemberRole
@@ -67,7 +66,6 @@ interface MemberFormState {
 const emptyForm: MemberFormState = {
   employeeId: '',
   name: '',
-  email: '',
   department: DEPARTMENTS[0],
   position: '',
   role: 'user',
@@ -90,7 +88,6 @@ export default function MemberList() {
       const matchesQuery =
         !query ||
         m.name.toLowerCase().includes(query.toLowerCase()) ||
-        m.email.toLowerCase().includes(query.toLowerCase()) ||
         m.employeeId.toLowerCase().includes(query.toLowerCase())
       const matchesDept = deptFilter === 'all' || m.department === deptFilter
       return matchesQuery && matchesDept
@@ -108,7 +105,6 @@ export default function MemberList() {
     setForm({
       employeeId: m.employeeId,
       name: m.name,
-      email: m.email,
       department: m.department,
       position: m.position,
       role: m.role,
@@ -118,7 +114,7 @@ export default function MemberList() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.employeeId.trim() || !form.name.trim() || !form.email.trim()) {
+    if (!form.employeeId.trim() || !form.name.trim()) {
       toast.error('กรุณากรอกข้อมูลให้ครบถ้วน')
       return
     }
@@ -162,7 +158,7 @@ export default function MemberList() {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">
             จัดการสมาชิก
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">เพิ่ม แก้ไข และลงทะเบียนใบหน้าให้สมาชิกในระบบ</p>
@@ -185,7 +181,7 @@ export default function MemberList() {
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="ค้นหาชื่อ, อีเมล, รหัสพนักงาน"
+                  placeholder="ค้นหาชื่อ, รหัสพนักงาน"
                   className="w-full pl-8 sm:w-64"
                 />
               </div>
@@ -210,7 +206,6 @@ export default function MemberList() {
             <TableHeader>
               <TableRow>
                 <TableHead>สมาชิก</TableHead>
-                <TableHead>อีเมล</TableHead>
                 <TableHead>กลุ่มสาระการเรียนรู้</TableHead>
                 <TableHead>ตำแหน่ง</TableHead>
                 <TableHead>Role</TableHead>
@@ -221,7 +216,7 @@ export default function MemberList() {
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                     ไม่พบสมาชิกที่ตรงกับเงื่อนไข
                   </TableCell>
                 </TableRow>
@@ -243,7 +238,6 @@ export default function MemberList() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{m.email}</TableCell>
                   <TableCell>
                     <Badge variant="secondary" className="font-normal">
                       {m.department}
@@ -336,16 +330,6 @@ export default function MemberList() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="สมชาย ใจดี"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="email">อีเมล</Label>
-              <Input
-                id="email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="somchai@company.com"
               />
             </div>
             <div className="space-y-1.5">
