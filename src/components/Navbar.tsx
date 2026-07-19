@@ -1,14 +1,27 @@
-import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, ScanFace } from 'lucide-react'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { Users, CalendarDays, ShieldCheck, LogIn, LogOut } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useAdminAuth } from '@/lib/adminAuth'
 import { cn } from '@/lib/utils'
 
+// "ภาพรวม" (Dashboard, "/") and "สแกนเช็คอิน" (FaceScanner, "/scan") were
+// removed from this nav by request — the routes themselves still exist in
+// App.tsx (e.g. a kiosk can still be pointed straight at /#/scan), they're
+// just no longer reachable from the top nav.
 const links = [
-  { to: '/', label: 'ภาพรวม', icon: LayoutDashboard, end: true },
   { to: '/members', label: 'สมาชิก', icon: Users, end: false },
-  { to: '/scan', label: 'สแกนเช็คอิน', icon: ScanFace, end: false },
+  { to: '/meetings', label: 'การประชุม', icon: CalendarDays, end: false },
 ]
 
 export default function Navbar() {
+  const { admin, logout } = useAdminAuth()
+  const navigate = useNavigate()
+
+  function handleLogout() {
+    logout()
+    navigate('/login')
+  }
+
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -41,12 +54,29 @@ export default function Navbar() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-          </span>
-          <span className="hidden text-xs font-medium text-muted-foreground sm:inline">ระบบพร้อมใช้งาน</span>
+        <div className="flex items-center gap-3">
+          <div className="hidden items-center gap-2 sm:flex">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+            </span>
+            <span className="text-xs font-medium text-muted-foreground">ระบบพร้อมใช้งาน</span>
+          </div>
+
+          {admin ? (
+            <div className="flex items-center gap-1.5">
+              <span className="hidden items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-foreground md:flex">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" /> {admin.name}
+              </span>
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5 text-xs">
+                <LogOut className="h-3.5 w-3.5" /> <span className="hidden sm:inline">ออกจากระบบ</span>
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => navigate('/login')} className="gap-1.5 text-xs">
+              <LogIn className="h-3.5 w-3.5" /> <span className="hidden sm:inline">เข้าสู่ระบบผู้ดูแล</span>
+            </Button>
+          )}
         </div>
       </div>
     </header>

@@ -31,20 +31,47 @@ import {
 import { UserPlus, ScanFace, Pencil, Trash2, Search, CheckCircle2, CircleDashed } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { addMember, updateMember, deleteMember, registerFace } from '@/lib/store'
-import type { Member } from '@/lib/types'
+import type { Member, MemberRole } from '@/lib/types'
 import FaceCaptureDialog from '@/components/FaceCaptureDialog'
 import { cn } from '@/lib/utils'
 
-const DEPARTMENTS = ['Engineering', 'Design', 'Marketing', 'HR', 'Finance', 'Sales', 'Operations']
+// 8 กลุ่มสาระการเรียนรู้ ตามหลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน
+const DEPARTMENTS = [
+  'ภาษาไทย',
+  'คณิตศาสตร์',
+  'วิทยาศาสตร์และเทคโนโลยี',
+  'สังคมศึกษา ศาสนา และวัฒนธรรม',
+  'สุขศึกษาและพลศึกษา',
+  'ศิลปะ',
+  'การงานอาชีพ',
+  'ภาษาต่างประเทศ',
+]
+
+// Fixed two-value set (unlike ตำแหน่ง/position, which is free text) — a
+// dropdown makes sense here since there are exactly these two roles.
+const ROLE_LABELS: Record<MemberRole, string> = {
+  admin: 'ผู้ดูแลระบบ',
+  user: 'ผู้ใช้งานทั่วไป',
+}
+const ROLES: MemberRole[] = ['user', 'admin']
 
 interface MemberFormState {
   employeeId: string
   name: string
   email: string
   department: string
+  position: string
+  role: MemberRole
 }
 
-const emptyForm: MemberFormState = { employeeId: '', name: '', email: '', department: DEPARTMENTS[0] }
+const emptyForm: MemberFormState = {
+  employeeId: '',
+  name: '',
+  email: '',
+  department: DEPARTMENTS[0],
+  position: '',
+  role: 'user',
+}
 
 export default function MemberList() {
   const { members } = useAppData()
@@ -78,7 +105,14 @@ export default function MemberList() {
 
   function openEditForm(m: Member) {
     setEditingId(m.id)
-    setForm({ employeeId: m.employeeId, name: m.name, email: m.email, department: m.department })
+    setForm({
+      employeeId: m.employeeId,
+      name: m.name,
+      email: m.email,
+      department: m.department,
+      position: m.position,
+      role: m.role,
+    })
     setFormOpen(true)
   }
 
@@ -156,11 +190,11 @@ export default function MemberList() {
                 />
               </div>
               <Select value={deptFilter} onValueChange={setDeptFilter}>
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue placeholder="แผนก" />
+                <SelectTrigger className="w-full sm:w-56">
+                  <SelectValue placeholder="กลุ่มสาระการเรียนรู้" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">ทุกแผนก</SelectItem>
+                  <SelectItem value="all">ทุกกลุ่มสาระการเรียนรู้</SelectItem>
                   {DEPARTMENTS.map((d) => (
                     <SelectItem key={d} value={d}>
                       {d}
@@ -177,7 +211,9 @@ export default function MemberList() {
               <TableRow>
                 <TableHead>สมาชิก</TableHead>
                 <TableHead>อีเมล</TableHead>
-                <TableHead>แผนก</TableHead>
+                <TableHead>กลุ่มสาระการเรียนรู้</TableHead>
+                <TableHead>ตำแหน่ง</TableHead>
+                <TableHead>Role</TableHead>
                 <TableHead>สถานะใบหน้า</TableHead>
                 <TableHead className="text-right">การจัดการ</TableHead>
               </TableRow>
@@ -185,7 +221,7 @@ export default function MemberList() {
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                     ไม่พบสมาชิกที่ตรงกับเงื่อนไข
                   </TableCell>
                 </TableRow>
@@ -211,6 +247,20 @@ export default function MemberList() {
                   <TableCell>
                     <Badge variant="secondary" className="font-normal">
                       {m.department}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{m.position || '—'}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'gap-1 border-none font-normal',
+                        m.role === 'admin'
+                          ? 'bg-accent/20 text-amber-800 dark:text-accent'
+                          : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      {ROLE_LABELS[m.role]}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -299,7 +349,7 @@ export default function MemberList() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>แผนก</Label>
+              <Label>กลุ่มสาระการเรียนรู้</Label>
               <Select value={form.department} onValueChange={(v) => setForm({ ...form, department: v })}>
                 <SelectTrigger>
                   <SelectValue />
@@ -308,6 +358,33 @@ export default function MemberList() {
                   {DEPARTMENTS.map((d) => (
                     <SelectItem key={d} value={d}>
                       {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="position">ตำแหน่ง</Label>
+              <Input
+                id="position"
+                value={form.position}
+                onChange={(e) => setForm({ ...form, position: e.target.value })}
+                placeholder="เช่น ครู, ครูอัตราจ้าง, ผู้อำนวยการ"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Role</Label>
+              <Select
+                value={form.role}
+                onValueChange={(v) => setForm({ ...form, role: v as MemberRole })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {ROLE_LABELS[r]} ({r})
                     </SelectItem>
                   ))}
                 </SelectContent>

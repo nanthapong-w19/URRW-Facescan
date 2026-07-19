@@ -1,5 +1,17 @@
 import { supabase } from './supabaseClient'
-import type { Member, CheckinRecord, CheckinMethod, MemberRow, CheckinRow } from './types'
+import type {
+  Member,
+  CheckinRecord,
+  CheckinMethod,
+  MemberRow,
+  CheckinRow,
+  MemberRole,
+  Meeting,
+  MeetingRow,
+  MeetingParticipantRow,
+  MeetingCheckin,
+  MeetingCheckinRow,
+} from './types'
 
 // Data layer for the app — backed by Supabase (Postgres) instead of
 // localStorage, so every kiosk device reads and writes the same shared
@@ -21,6 +33,8 @@ function rowToMember(row: MemberRow): Member {
     name: row.name,
     email: row.email ?? '',
     department: row.department,
+    position: row.position ?? '',
+    role: row.role === 'admin' ? 'admin' : 'user',
     faceStatus: row.face_descriptor ? 'registered' : 'unregistered',
     faceDescriptor: row.face_descriptor ?? null,
     photo: row.photo_url ?? null,
@@ -113,6 +127,8 @@ export async function addMember(input: {
   name: string
   email: string
   department: string
+  position: string
+  role: MemberRole
 }): Promise<Member> {
   const { data, error } = await supabase
     .from('facein_members')
@@ -121,6 +137,8 @@ export async function addMember(input: {
       name: input.name,
       email: input.email,
       department: input.department,
+      position: input.position,
+      role: input.role,
     })
     .select('*')
     .single()
@@ -130,13 +148,15 @@ export async function addMember(input: {
 
 export async function updateMember(
   id: string,
-  patch: Partial<Pick<Member, 'employeeId' | 'name' | 'email' | 'department'>>
+  patch: Partial<Pick<Member, 'employeeId' | 'name' | 'email' | 'department' | 'position' | 'role'>>
 ): Promise<Member> {
   const dbPatch: Record<string, unknown> = {}
   if (patch.employeeId !== undefined) dbPatch.employee_id = patch.employeeId
   if (patch.name !== undefined) dbPatch.name = patch.name
   if (patch.email !== undefined) dbPatch.email = patch.email
   if (patch.department !== undefined) dbPatch.department = patch.department
+  if (patch.position !== undefined) dbPatch.position = patch.position
+  if (patch.role !== undefined) dbPatch.role = patch.role
 
   const { data, error } = await supabase
     .from('facein_members')
@@ -176,6 +196,162 @@ export async function recordCheckin(
     .single()
   if (error) throw new Error(describeDbError(error))
   return rowToCheckin(data as unknown as CheckinRow)
+}
+
+// --- Meetings ---------------------------------------------------------
+// Created by an admin after face-login (see src/pages/Login.tsx). Each
+// meeting has its own list of participants drawn from the member roster,
+// stored in the join table `facein_meeting_participants`.
+
+function rowToMeeting(
+  row: MeetingRow,
+  participantRows: MeetingParticipantRow[],
+  checkinCounts: Record<string, number> = {}
+): Meeting {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description ?? '',
+    meetingTime: row.meeting_time,
+    location: row.location ?? '',
+    createdByName: row.created_by_name ?? '',
+    createdAt: row.created_at,
+    participants: participantRows
+      .filter((p) => p.meeting_id === row.id && p.facein_members)
+      .map((p) => ({
+        memberId: p.facein_members!.id,
+        employeeId: p.facein_members!.employee_id,
+        name: p.facein_members!.name,
+        department: p.facein_members!.department,
+        position: p.facein_members!.position,
+        faceDescriptor: p.facein_members!.face_descriptor ?? null,
+      })),
+    checkedInCount: checkinCounts[row.id] ?? 0,
+  }
+}
+
+// Selected once here and reused by both getMeetings/getMeeting so the two
+// queries can't silently drift apart in which columns they join.
+const MEETING_PARTICIPANTS_SELECT =
+  'id, meeting_id, member_id, facein_members(id, name, department, position, employee_id, face_descriptor)'
+
+export async function getMeetings(): Promise<Meeting[]> {
+  const [
+    { data: meetingRows, error: meetingsErr },
+    { data: participantRows, error: participantsErr },
+    { data: checkinRows, error: checkinsErr },
+  ] = await Promise.all([
+    supabase.from('facein_meetings').select('*').order('created_at', { ascending: false }),
+    supabase.from('facein_meeting_participants').select(MEETING_PARTICIPANTS_SELECT),
+    // Only the meeting_id column is needed here — this powers the
+    // attendance-rate summary on the meetings list, not the full
+    // check-in detail (that's fetched separately, per-meeting, by
+    // getMeetingCheckins on MeetingDetail.tsx).
+    supabase.from('facein_meeting_checkins').select('meeting_id'),
+  ])
+  if (meetingsErr) throw new Error(describeDbError(meetingsErr))
+  if (participantsErr) throw new Error(describeDbError(participantsErr))
+  if (checkinsErr) throw new Error(describeDbError(checkinsErr))
+  const participants = (participantRows ?? []) as unknown as MeetingParticipantRow[]
+  const checkinCounts: Record<string, number> = {}
+  for (const row of (checkinRows ?? []) as { meeting_id: string }[]) {
+    checkinCounts[row.meeting_id] = (checkinCounts[row.meeting_id] ?? 0) + 1
+  }
+  return (meetingRows as MeetingRow[]).map((row) => rowToMeeting(row, participants, checkinCounts))
+}
+
+export async function getMeeting(id: string): Promise<Meeting | null> {
+  const [{ data: meetingRow, error: meetingErr }, { data: participantRows, error: participantsErr }] =
+    await Promise.all([
+      supabase.from('facein_meetings').select('*').eq('id', id).maybeSingle(),
+      supabase.from('facein_meeting_participants').select(MEETING_PARTICIPANTS_SELECT).eq('meeting_id', id),
+    ])
+  if (meetingErr) throw new Error(describeDbError(meetingErr))
+  if (participantsErr) throw new Error(describeDbError(participantsErr))
+  if (!meetingRow) return null
+  return rowToMeeting(meetingRow as MeetingRow, (participantRows ?? []) as unknown as MeetingParticipantRow[])
+}
+
+export async function createMeeting(input: {
+  title: string
+  description: string
+  meetingTime: string | null
+  location: string
+  createdByMemberId: string
+  createdByName: string
+  participantIds: string[]
+}): Promise<Meeting> {
+  const { data: meetingRow, error: meetingErr } = await supabase
+    .from('facein_meetings')
+    .insert({
+      title: input.title,
+      description: input.description || null,
+      meeting_time: input.meetingTime,
+      location: input.location || null,
+      created_by: input.createdByMemberId,
+      created_by_name: input.createdByName,
+    })
+    .select('*')
+    .single()
+  if (meetingErr) throw new Error(describeDbError(meetingErr))
+
+  const meeting = meetingRow as MeetingRow
+
+  if (input.participantIds.length > 0) {
+    const { error: participantsErr } = await supabase.from('facein_meeting_participants').insert(
+      input.participantIds.map((memberId) => ({ meeting_id: meeting.id, member_id: memberId }))
+    )
+    if (participantsErr) throw new Error(describeDbError(participantsErr))
+  }
+
+  const created = await getMeeting(meeting.id)
+  if (!created) throw new Error('สร้างการประชุมสำเร็จ แต่ไม่พบข้อมูลที่เพิ่งสร้าง')
+  return created
+}
+
+export async function deleteMeeting(id: string): Promise<void> {
+  const { error } = await supabase.from('facein_meetings').delete().eq('id', id)
+  if (error) throw new Error(describeDbError(error))
+}
+
+// --- Per-meeting check-ins ---------------------------------------------
+// Tracks which invited participants have actually checked in to a specific
+// meeting (via the face scanner on MeetingDetail.tsx), separate from the
+// daily kiosk check-ins in facein_checkins/CheckinRecord above.
+
+function rowToMeetingCheckin(row: MeetingCheckinRow): MeetingCheckin {
+  return {
+    id: row.id,
+    meetingId: row.meeting_id,
+    memberId: row.member_id,
+    checkedInAt: row.checked_in_at,
+    method: row.method,
+    confidence: row.confidence ?? undefined,
+  }
+}
+
+export async function getMeetingCheckins(meetingId: string): Promise<MeetingCheckin[]> {
+  const { data, error } = await supabase
+    .from('facein_meeting_checkins')
+    .select('*')
+    .eq('meeting_id', meetingId)
+  if (error) throw new Error(describeDbError(error))
+  return (data as MeetingCheckinRow[]).map(rowToMeetingCheckin)
+}
+
+export async function recordMeetingCheckin(
+  meetingId: string,
+  memberId: string,
+  method: CheckinMethod,
+  confidence?: number
+): Promise<MeetingCheckin> {
+  const { data, error } = await supabase
+    .from('facein_meeting_checkins')
+    .insert({ meeting_id: meetingId, member_id: memberId, method, confidence: confidence ?? null })
+    .select('*')
+    .single()
+  if (error) throw new Error(describeDbError(error))
+  return rowToMeetingCheckin(data as MeetingCheckinRow)
 }
 
 // --- Pure helpers below: these operate on a `checkins` array that's already

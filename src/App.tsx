@@ -2,10 +2,16 @@ import { HashRouter, Routes, Route } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import Navbar from '@/components/Navbar'
+import RequireAdmin from '@/components/RequireAdmin'
 import Dashboard from '@/pages/Dashboard'
 import MemberList from '@/pages/MemberList'
 import FaceScanner from '@/pages/FaceScanner'
+import Login from '@/pages/Login'
+import MeetingList from '@/pages/MeetingList'
+import CreateMeeting from '@/pages/CreateMeeting'
+import MeetingDetail from '@/pages/MeetingDetail'
 import { isSupabaseConfigured } from '@/lib/supabaseClient'
+import { AdminAuthProvider } from '@/lib/adminAuth'
 
 // Shown instead of the app when .env is missing or incomplete — the most
 // common first-run mistake, and previously produced a silent blank white
@@ -33,23 +39,50 @@ function App() {
   }
 
   return (
-    <HashRouter>
-      <div className="min-h-screen bg-background">
-        <div
-          className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[420px] bg-gradient-to-b from-primary/10 via-accent/10 to-transparent dark:from-primary/20 dark:via-transparent"
-          aria-hidden
-        />
-        <Navbar />
-        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/members" element={<MemberList />} />
-            <Route path="/scan" element={<FaceScanner />} />
-          </Routes>
-        </main>
-        <Toaster position="top-right" richColors />
-      </div>
-    </HashRouter>
+    <AdminAuthProvider>
+      <HashRouter>
+        <div className="min-h-screen bg-background">
+          <div
+            className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[420px] bg-gradient-to-b from-primary/10 via-accent/10 to-transparent dark:from-primary/20 dark:via-transparent"
+            aria-hidden
+          />
+          <Navbar />
+          <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/members" element={<MemberList />} />
+              <Route path="/scan" element={<FaceScanner />} />
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/meetings"
+                element={
+                  <RequireAdmin>
+                    <MeetingList />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/meetings/new"
+                element={
+                  <RequireAdmin>
+                    <CreateMeeting />
+                  </RequireAdmin>
+                }
+              />
+              {/* Deliberately NOT wrapped in RequireAdmin: this is the page a
+                  meeting's participants open (e.g. from a shared link/QR
+                  code, or on a shared kiosk) to scan their face and check
+                  in to that specific meeting — they aren't admins and
+                  shouldn't need to log in as one. The delete button inside
+                  MeetingDetail is the only part still gated, checked
+                  client-side via useAdminAuth(). */}
+              <Route path="/meetings/:id" element={<MeetingDetail />} />
+            </Routes>
+          </main>
+          <Toaster position="top-right" richColors />
+        </div>
+      </HashRouter>
+    </AdminAuthProvider>
   )
 }
 
