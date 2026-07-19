@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import Navbar from '@/components/Navbar'
@@ -49,7 +49,13 @@ function App() {
           <Navbar />
           <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
             <Routes>
-              <Route path="/" element={<Dashboard />} />
+              {/* /#/login is now the home page — a kiosk/browser opening the
+                  site fresh should land on the face-login scanner, not the
+                  dashboard. Dashboard.tsx still exists and still works, just
+                  moved off "/" to "/dashboard" so it's reachable by URL
+                  rather than being deleted outright. */}
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/members" element={<MemberList />} />
               <Route path="/scan" element={<FaceScanner />} />
               <Route path="/login" element={<Login />} />
