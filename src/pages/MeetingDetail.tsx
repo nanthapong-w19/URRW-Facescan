@@ -313,12 +313,14 @@ export default function MeetingDetail() {
 // Scoped to only this meeting's invitees (registeredParticipants), unlike
 // FaceScanner.tsx which matches against the whole roster.
 
-// Cross-browser Fullscreen API helpers — Safari (including iOS 16.4+) still
-// only exposes the `webkit`-prefixed variants, so every call site here tries
-// the standard API first and falls back to the prefixed one rather than
-// assuming either is present. Older iOS Safari without either API simply
-// fails the try/catch in toggleFullscreen(), which surfaces a toast instead
-// of leaving the button silently broken.
+// Cross-browser Fullscreen API helpers — desktop Safari (and iPadOS) still
+// only expose the `webkit`-prefixed variants, so every call site here tries
+// the standard API first and falls back to the prefixed one. iPhone Safari
+// (and many in-app browsers, e.g. Line/Facebook's built-in webview) don't
+// implement the Fullscreen API on arbitrary elements at all — there
+// `requestFullscreenCompat` throws, which `toggleFullscreen` below catches
+// and uses as the signal to fall back to a CSS-only "maximized view" instead
+// of leaving the button broken on those devices (see `manualFullscreen`).
 function getFullscreenElement(): Element | null {
   return document.fullscreenElement ?? (document as any).webkitFullscreenElement ?? null
 }
@@ -364,7 +366,16 @@ function MeetingScanner({
   const [cameraState, setCameraState] = useState<CameraState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [feedback, setFeedback] = useState<ScanFeedback>(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  // Two independent flags feed the single `isFullscreen` flag the rest of
+  // this component renders against: `nativeFullscreen` mirrors the browser's
+  // real Fullscreen API state, while `manualFullscreen` is a CSS-only
+  // fallback (just the same "fixed inset-0" kiosk layout, without hiding the
+  // browser chrome) for devices/browsers with no Fullscreen API support at
+  // all — most notably iPhone Safari and in-app browsers. This is what makes
+  // the "ขยายเต็มจอ" button work everywhere instead of erroring out on those.
+  const [nativeFullscreen, setNativeFullscreen] = useState(false)
+  const [manualFullscreen, setManualFullscreen] = useState(false)
+  const isFullscreen = nativeFullscreen || manualFullscreen
 
   // Side "เช็คอินล่าสุด" panel — driven straight off the meeting's live
   // checkins (already kept fresh via MeetingDetail's realtime subscription),
@@ -387,7 +398,7 @@ function MeetingScanner({
 
   useEffect(() => {
     function onFullscreenChange() {
-      setIsFullscreen(getFullscreenElement() === containerRef.current)
+      setNativeFullscreen(getFullscreenElement() === containerRef.current)
     }
     document.addEventListener('fullscreenchange', onFullscreenChange)
     document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
@@ -398,16 +409,33 @@ function MeetingScanner({
   }, [])
 
   const toggleFullscreen = useCallback(async () => {
-    try {
+    // Turning off — exit real fullscreen if it's engaged, and always clear
+    // the manual CSS fallback too (only one of the two is ever true, but
+    // clearing both keeps this in sync regardless of how we got here).
+    if (nativeFullscreen || manualFullscreen) {
       if (getFullscreenElement()) {
-        await exitFullscreenCompat()
-      } else if (containerRef.current) {
-        await requestFullscreenCompat(containerRef.current)
+        try {
+          await exitFullscreenCompat()
+        } catch {
+          // ignore — the manualFullscreen(false) below still turns off the
+          // kiosk layout even if the native exit call itself failed
+        }
       }
-    } catch {
-      toast.error('อุปกรณ์นี้ไม่รองรับโหมดเต็มหน้าจอ')
+      setManualFullscreen(false)
+      return
     }
-  }, [])
+    // Turning on — prefer the real Fullscreen API (it also hides the browser
+    // chrome), but if it's missing or rejected on this device/browser (e.g.
+    // iPhone Safari, in-app browsers), fall back to the CSS-only maximized
+    // view instead of leaving the button broken.
+    if (containerRef.current) {
+      try {
+        await requestFullscreenCompat(containerRef.current)
+      } catch {
+        setManualFullscreen(true)
+      }
+    }
+  }, [nativeFullscreen, manualFullscreen])
 
   const paintLoop = useCallback(() => {
     const video = videoRef.current
