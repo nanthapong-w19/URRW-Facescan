@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, AlertTriangle, ShieldCheck, KeyRound, Camera } from 'lucide-react'
+import { Loader2, AlertTriangle, ShieldCheck, Camera } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { loadFaceModels, detectFaceWithDescriptor, descriptorDistance, MATCH_THRESHOLD } from '@/lib/faceEngine'
@@ -75,7 +75,7 @@ export default function Login() {
       await loadFaceModels()
     } catch {
       setErrorMsg(
-        'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ กรุณาใช้ "เข้าสู่ระบบด้วยรหัสพนักงาน" ด้านล่างแทน หรือลองใหม่อีกครั้ง'
+        'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ กรุณาใช้ "เข้าสู่ระบบด้วยรหัสบุคลากร" ด้านล่างแทน หรือลองใหม่อีกครั้ง'
       )
       setCameraState('error')
       return
@@ -155,16 +155,16 @@ export default function Login() {
     setManualError('')
     const id = manualId.trim()
     if (!id) {
-      setManualError('กรุณากรอกรหัสพนักงาน')
+      setManualError('กรุณากรอกรหัสบุคลากร')
       return
     }
     const member = members.find((m) => m.employeeId.toLowerCase() === id.toLowerCase())
     if (!member) {
-      setManualError('ไม่พบรหัสพนักงานนี้ในระบบ')
+      setManualError('ไม่พบรหัสบุคลากรนี้ในระบบ')
       return
     }
     if (member.role !== 'admin') {
-      setManualError('รหัสพนักงานนี้ไม่มีสิทธิ์ผู้ดูแลระบบ (admin)')
+      setManualError('รหัสบุคลากรนี้ไม่มีสิทธิ์ผู้ดูแลระบบ (admin)')
       return
     }
     completeLogin(member)
@@ -282,7 +282,7 @@ export default function Login() {
             {adminMembers.length === 0 && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                 ยังไม่มีผู้ดูแลระบบที่ลงทะเบียนใบหน้าไว้ กรุณาไปที่หน้า &quot;สมาชิก&quot; ตั้งค่า role เป็น admin
-                และลงทะเบียนใบหน้าก่อน หรือใช้การเข้าสู่ระบบด้วยรหัสพนักงานด้านล่าง
+                และลงทะเบียนใบหน้าก่อน หรือใช้การเข้าสู่ระบบด้วยรหัสบุคลากรด้านล่าง
               </p>
             )}
           </CardContent>
@@ -291,16 +291,28 @@ export default function Login() {
         <Card className="w-full border-border/70 bg-card/[0.97] shadow-lift backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2 text-base">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <KeyRound className="h-4 w-4" />
+              {/* Round 40: this badge used to be a plain lucide KeyRound icon
+                  inside a flat tinted circle. Replaced with a real image
+                  (a person + padlock badge) per request, given some visual
+                  "dimension" with a soft glow behind it (echoing the same
+                  glow-behind-logo treatment used elsewhere on this page)
+                  plus a drop-shadow on the image itself so it reads with
+                  depth rather than sitting flush against the card. */}
+              <span className="relative flex h-9 w-9 shrink-0 items-center justify-center">
+                <span aria-hidden className="absolute inset-0 scale-150 rounded-full bg-primary/25 blur-md" />
+                <img
+                  src="/295128.png"
+                  alt=""
+                  className="relative h-9 w-9 rounded-full object-cover drop-shadow-[0_3px_6px_rgba(0,0,0,0.35)]"
+                />
               </span>
-              เข้าสู่ระบบด้วยรหัสพนักงาน (สำรอง)
+              เข้าสู่ระบบด้วยรหัสผู้ดูแล
             </CardTitle>
-            <CardDescription>สำหรับกรณีกล้องใช้งานไม่ได้ — ใช้ได้เฉพาะรหัสที่มีสิทธิ์ admin เท่านั้น</CardDescription>
+            <CardDescription>สำรองสำหรับกรณีกล้องใช้งานไม่ได้</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="manual-id">รหัสพนักงาน</Label>
+              <Label htmlFor="manual-id">รหัสบุคลากร</Label>
               <Input
                 id="manual-id"
                 value={manualId}
@@ -318,8 +330,8 @@ export default function Login() {
               />
             </div>
             {manualError && <p className="text-xs text-destructive">{manualError}</p>}
-            <Button size="lg" onClick={handleManualLogin} className="w-full gap-1.5">
-              <KeyRound className="h-3.5 w-3.5" /> เข้าสู่ระบบ
+            <Button size="lg" onClick={handleManualLogin} className="w-full">
+              เข้าสู่ระบบ
             </Button>
           </CardContent>
         </Card>

@@ -20,6 +20,8 @@ import {
   CheckCircle2,
   KeyRound,
   Search,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { getMeeting, deleteMeeting, getMeetingCheckins, recordMeetingCheckin } from '@/lib/store'
 import { supabase } from '@/lib/supabaseClient'
@@ -96,6 +98,13 @@ export default function MeetingDetail() {
   const checkedInIds = useMemo(() => new Set(checkins.map((c) => c.memberId)), [checkins])
   const registeredParticipants = useMemo(
     () => (meeting?.participants ?? []).filter((p) => p.faceDescriptor),
+    [meeting]
+  )
+  // Lookup used by MeetingScanner's side "เช็คอินล่าสุด" panel so it can show
+  // a name/department for every check-in row, including ones checked in
+  // manually (no faceDescriptor, so they're outside registeredParticipants).
+  const participantsById = useMemo(
+    () => new Map((meeting?.participants ?? []).map((p) => [p.memberId, p])),
     [meeting]
   )
 
@@ -235,17 +244,19 @@ export default function MeetingDetail() {
         </CardContent>
       </Card>
 
+      {/* Round 42: the "เช็คอินแบบ Manual" card used to be its own full-width
+          card here, below the scanner. It's now rendered smaller, inside
+          MeetingScanner's side panel, directly above "เช็คอินล่าสุด" — see
+          MeetingScanner's `participants`/`onManualCheckin` props below. */}
       <MeetingScanner
         meetingId={id!}
         registeredParticipants={registeredParticipants}
         checkedInIds={checkedInIds}
-        onMatch={(p, distance) => handleCheckin(p, 'face', 1 - distance / MATCH_THRESHOLD)}
-      />
-
-      <ManualMeetingCheckin
+        checkins={checkins}
+        participantsById={participantsById}
         participants={meeting.participants}
-        checkedInIds={checkedInIds}
-        onCheckin={(p) => handleCheckin(p, 'manual')}
+        onMatch={(p, distance) => handleCheckin(p, 'face', 1 - distance / MATCH_THRESHOLD)}
+        onManualCheckin={(p) => handleCheckin(p, 'manual')}
       />
 
       <Card className="border-border/70 shadow-soft">
@@ -302,16 +313,46 @@ export default function MeetingDetail() {
 // Scoped to only this meeting's invitees (registeredParticipants), unlike
 // FaceScanner.tsx which matches against the whole roster.
 
+// Cross-browser Fullscreen API helpers — Safari (including iOS 16.4+) still
+// only exposes the `webkit`-prefixed variants, so every call site here tries
+// the standard API first and falls back to the prefixed one rather than
+// assuming either is present. Older iOS Safari without either API simply
+// fails the try/catch in toggleFullscreen(), which surfaces a toast instead
+// of leaving the button silently broken.
+function getFullscreenElement(): Element | null {
+  return document.fullscreenElement ?? (document as any).webkitFullscreenElement ?? null
+}
+
+async function requestFullscreenCompat(el: HTMLElement) {
+  if (el.requestFullscreen) return el.requestFullscreen()
+  if ((el as any).webkitRequestFullscreen) return (el as any).webkitRequestFullscreen()
+  throw new Error('Fullscreen API is not supported on this device')
+}
+
+async function exitFullscreenCompat() {
+  if (document.exitFullscreen) return document.exitFullscreen()
+  if ((document as any).webkitExitFullscreen) return (document as any).webkitExitFullscreen()
+}
+
 function MeetingScanner({
   registeredParticipants,
   checkedInIds,
+  checkins,
+  participantsById,
+  participants,
   onMatch,
+  onManualCheckin,
 }: {
   meetingId: string
   registeredParticipants: MeetingParticipant[]
   checkedInIds: Set<string>
+  checkins: MeetingCheckin[]
+  participantsById: Map<string, MeetingParticipant>
+  participants: MeetingParticipant[]
   onMatch: (participant: MeetingParticipant, distance: number) => void
+  onManualCheckin: (participant: MeetingParticipant) => void
 }) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -323,6 +364,50 @@ function MeetingScanner({
   const [cameraState, setCameraState] = useState<CameraState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [feedback, setFeedback] = useState<ScanFeedback>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // Side "เช็คอินล่าสุด" panel — driven straight off the meeting's live
+  // checkins (already kept fresh via MeetingDetail's realtime subscription),
+  // not local scan state, so it shows who checked in regardless of *which*
+  // device/kiosk did the scanning, newest first.
+  const recentScans = useMemo(() => {
+    return [...checkins]
+      .sort((a, b) => new Date(b.checkedInAt).getTime() - new Date(a.checkedInAt).getTime())
+      .slice(0, 12)
+      .map((c) => {
+        const p = participantsById.get(c.memberId)
+        return {
+          id: c.id,
+          name: p?.name ?? 'ไม่ทราบชื่อผู้เข้าร่วม',
+          department: p?.department ?? '',
+          time: formatCheckinTime(c.checkedInAt),
+        }
+      })
+  }, [checkins, participantsById])
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      setIsFullscreen(getFullscreenElement() === containerRef.current)
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
+    }
+  }, [])
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (getFullscreenElement()) {
+        await exitFullscreenCompat()
+      } else if (containerRef.current) {
+        await requestFullscreenCompat(containerRef.current)
+      }
+    } catch {
+      toast.error('อุปกรณ์นี้ไม่รองรับโหมดเต็มหน้าจอ')
+    }
+  }, [])
 
   const paintLoop = useCallback(() => {
     const video = videoRef.current
@@ -356,7 +441,7 @@ function MeetingScanner({
     try {
       await loadFaceModels()
     } catch {
-      setErrorMsg('ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ กรุณาใช้ "เช็คอินแบบ Manual" ด้านล่างแทน หรือลองใหม่อีกครั้ง')
+      setErrorMsg('ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ กรุณาใช้ "เช็คอินแบบ Manual" ในแผงด้านข้างแทน หรือลองใหม่อีกครั้ง')
       setCameraState('error')
       return
     }
@@ -442,89 +527,179 @@ function MeetingScanner({
   }, [cameraState, registeredParticipants, checkedInIds])
 
   return (
-    <Card className="border-border/70 shadow-soft">
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-        <div>
-          <CardTitle className="font-display flex items-center gap-2 text-base">
-            <ScanFace className="h-4 w-4 text-primary" /> สแกนใบหน้าเพื่อเช็คอินเข้าร่วมประชุม
-          </CardTitle>
-          <CardDescription>รองรับผู้เข้าร่วมที่ลงทะเบียนใบหน้าแล้ว {registeredParticipants.length} คน</CardDescription>
-        </div>
-        {cameraState === 'ready' ? (
-          <Button size="sm" variant="outline" onClick={stopCamera} className="gap-1.5">
-            <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline" onClick={() => startCamera()} className="gap-1.5">
-            <Camera className="h-3.5 w-3.5" /> เปิดกล้อง
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent>
-        <div className="relative mx-auto aspect-video w-full max-w-xl overflow-hidden rounded-2xl bg-slate-900">
-          {cameraState === 'loading' && (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-white/80">
-              <Loader2 className="h-7 w-7 animate-spin" />
-              <p className="text-sm">กำลังเตรียมกล้องและโมเดลตรวจจับใบหน้า...</p>
-            </div>
-          )}
-          {cameraState === 'error' && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-              <AlertTriangle className="h-8 w-8 text-amber-400" />
-              <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
-              <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 gap-1.5">
-                <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
+    // containerRef is the element that actually goes fullscreen (via the
+    // Fullscreen API) when the button below is pressed. It wraps the header
+    // too — not just the video box — so the "ย่อออกจากเต็มจอ" control and
+    // the เปิด/ปิดกล้อง button stay reachable while fullscreened, on every
+    // device (the `isFullscreen &&` classes are a CSS belt-and-braces fallback
+    // for the rare case a browser's native fullscreen sizing doesn't kick in).
+    <div ref={containerRef} className={cn(isFullscreen && 'fixed inset-0 z-50 overflow-y-auto bg-background p-3 sm:p-4')}>
+      <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex h-full flex-col border-none shadow-none')}>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="font-display flex items-center gap-2 text-base">
+              <ScanFace className="h-4 w-4 text-primary" /> สแกนใบหน้าเพื่อเช็คอินเข้าร่วมประชุม
+            </CardTitle>
+            <CardDescription>รองรับผู้เข้าร่วมที่ลงทะเบียนใบหน้าแล้ว {registeredParticipants.length} คน</CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {cameraState === 'ready' ? (
+              <Button size="sm" variant="outline" onClick={stopCamera} className="gap-1.5">
+                <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
               </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => startCamera()} className="gap-1.5">
+                <Camera className="h-3.5 w-3.5" /> เปิดกล้อง
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={toggleFullscreen} className="gap-1.5">
+              {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              {isFullscreen ? 'ย่อออกจากเต็มจอ' : 'ขยายเต็มจอ'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className={cn(isFullscreen && 'flex flex-1 flex-col')}>
+          <div className={cn('flex flex-col gap-3', isFullscreen ? 'flex-1 sm:flex-row' : 'sm:flex-row')}>
+            <div
+              className={cn(
+                'relative overflow-hidden rounded-2xl bg-slate-900',
+                isFullscreen ? 'min-h-[45vh] flex-1' : 'mx-auto aspect-video w-full max-w-xl sm:mx-0 sm:flex-1'
+              )}
+            >
+              {cameraState === 'loading' && (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-white/80">
+                  <Loader2 className="h-7 w-7 animate-spin" />
+                  <p className="text-sm">กำลังเตรียมกล้องและโมเดลตรวจจับใบหน้า...</p>
+                </div>
+              )}
+              {cameraState === 'error' && (
+                <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                  <AlertTriangle className="h-8 w-8 text-amber-400" />
+                  <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
+                  <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 gap-1.5">
+                    <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
+                  </Button>
+                </div>
+              )}
+              {cameraState === 'idle' && (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-white/60">
+                  <CameraOff className="h-7 w-7" />
+                  <p className="text-sm">กล้องปิดอยู่</p>
+                </div>
+              )}
+              <video
+                ref={videoRef}
+                muted
+                playsInline
+                webkit-playsinline="true"
+                className="absolute -left-full -top-full h-px w-px opacity-0"
+              />
+              <canvas
+                ref={canvasRef}
+                className={cn('h-full w-full object-cover', cameraState !== 'ready' && 'hidden')}
+              />
+              {feedback && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-emerald-600/90 text-white backdrop-blur-sm animate-in fade-in zoom-in-95">
+                  <CheckCircle2 className="h-14 w-14" />
+                  <p className="font-display text-xl font-bold">เช็คอินสำเร็จ</p>
+                  <p className="text-lg">{feedback.name}</p>
+                  <p className="text-sm text-white/80">{feedback.department}</p>
+                </div>
+              )}
             </div>
-          )}
-          {cameraState === 'idle' && (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-white/60">
-              <CameraOff className="h-7 w-7" />
-              <p className="text-sm">กล้องปิดอยู่</p>
+
+            {/* Side panel showing who has scanned/checked in — always visible
+                next to the camera (stacked below it on narrow screens), and
+                especially useful in fullscreen kiosk mode where there's no
+                page below to scroll to for this information. */}
+            <div
+              className={cn(
+                'flex shrink-0 flex-col gap-3 rounded-2xl border p-3',
+                isFullscreen ? 'w-full border-white/10 bg-slate-900 text-white sm:w-72' : 'w-full border-border/70 bg-card sm:w-64'
+              )}
+            >
+              {/* Round 42: "เช็คอินแบบ Manual" moved here (from its own
+                  full-width card lower on the page) and shrunk down to a
+                  compact widget, sitting directly above "เช็คอินล่าสุด" so
+                  both live in the same side panel next to the camera. */}
+              <ManualMeetingCheckin
+                participants={participants}
+                checkedInIds={checkedInIds}
+                onCheckin={onManualCheckin}
+                isFullscreen={isFullscreen}
+              />
+
+              <div
+                className={cn(
+                  'flex flex-col gap-2 border-t pt-2.5',
+                  isFullscreen ? 'border-white/10' : 'border-border/60'
+                )}
+              >
+                <p className={cn('flex items-center gap-1.5 text-xs font-semibold', isFullscreen ? 'text-white/80' : 'text-muted-foreground')}>
+                  <Users className="h-3.5 w-3.5" /> เช็คอินล่าสุด
+                </p>
+                <div className={cn('space-y-1.5 overflow-y-auto', isFullscreen ? 'max-h-[45vh] flex-1' : 'max-h-56')}>
+                {recentScans.length === 0 ? (
+                  <p className={cn('rounded-lg px-2.5 py-2 text-xs', isFullscreen ? 'bg-white/5 text-white/50' : 'bg-muted text-muted-foreground')}>
+                    ยังไม่มีผู้เช็คอิน
+                  </p>
+                ) : (
+                  recentScans.map((r, i) => (
+                    <div
+                      key={r.id}
+                      className={cn(
+                        'flex items-center gap-2 rounded-lg border px-2.5 py-1.5',
+                        isFullscreen ? 'border-white/10 bg-white/5' : 'border-border/50 bg-secondary/40',
+                        i === 0 && 'border-emerald-500/60'
+                      )}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{r.name}</p>
+                        <p className={cn('truncate text-xs', isFullscreen ? 'text-white/60' : 'text-muted-foreground')}>
+                          {r.department ? `${r.department} · ` : ''}
+                          {r.time}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+                </div>
+              </div>
             </div>
+          </div>
+          {registeredParticipants.length === 0 && (
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              ยังไม่มีผู้เข้าร่วมที่ลงทะเบียนใบหน้าไว้ ใช้ &quot;เช็คอินแบบ Manual&quot; ในแผงด้านข้างแทนได้
+            </p>
           )}
-          <video
-            ref={videoRef}
-            muted
-            playsInline
-            webkit-playsinline="true"
-            className="absolute -left-full -top-full h-px w-px opacity-0"
-          />
-          <canvas
-            ref={canvasRef}
-            className={cn('h-full w-full object-cover', cameraState !== 'ready' && 'hidden')}
-          />
-          {feedback && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-emerald-600/90 text-white backdrop-blur-sm animate-in fade-in zoom-in-95">
-              <CheckCircle2 className="h-14 w-14" />
-              <p className="font-display text-xl font-bold">เช็คอินสำเร็จ</p>
-              <p className="text-lg">{feedback.name}</p>
-              <p className="text-sm text-white/80">{feedback.department}</p>
-            </div>
-          )}
-        </div>
-        {registeredParticipants.length === 0 && (
-          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            ยังไม่มีผู้เข้าร่วมที่ลงทะเบียนใบหน้าไว้ ใช้ &quot;เช็คอินแบบ Manual&quot; ด้านล่างแทนได้
-          </p>
-        )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
-// --- Manual fallback card -------------------------------------------------
+// --- Manual fallback widget ------------------------------------------------
 // Searches only within this meeting's participant list, not the full
 // member roster — matches the scoping of the face scanner above.
+//
+// Round 42: this used to be its own full-width `Card` rendered lower on the
+// page. Per request it's now a smaller widget nested directly inside
+// MeetingScanner's side panel (above "เช็คอินล่าสุด") — no outer Card/border
+// of its own anymore, since it already sits inside that panel's border; an
+// `isFullscreen` prop lets it flip to light-on-dark text/input styling so it
+// still reads correctly against the side panel's dark theme in kiosk mode.
 
 function ManualMeetingCheckin({
   participants,
   checkedInIds,
   onCheckin,
+  isFullscreen,
 }: {
   participants: MeetingParticipant[]
   checkedInIds: Set<string>
   onCheckin: (participant: MeetingParticipant) => void
+  isFullscreen: boolean
 }) {
   const [query, setQuery] = useState('')
 
@@ -533,59 +708,68 @@ function ManualMeetingCheckin({
     const q = query.trim().toLowerCase()
     return participants
       .filter((p) => p.name.toLowerCase().includes(q) || p.employeeId.toLowerCase().includes(q))
-      .slice(0, 6)
+      .slice(0, 4)
   }, [participants, query])
 
   return (
-    <Card className="border-border/70 shadow-soft">
-      <CardHeader>
-        <CardTitle className="font-display flex items-center gap-2 text-base">
-          <KeyRound className="h-4 w-4 text-primary" /> เช็คอินแบบ Manual
-        </CardTitle>
-        <CardDescription>สำหรับกรณีที่ระบบสแกนใบหน้ามีปัญหา หรือกล้องใช้งานไม่ได้</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="พิมพ์รหัสพนักงานหรือชื่อผู้เข้าร่วม" className="pl-8" />
-        </div>
-        <div className="min-h-[2.5rem] space-y-1.5">
-          {query.trim() && matches.length === 0 && (
-            <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">ไม่พบผู้เข้าร่วมที่ตรงกัน</p>
+    <div className="flex flex-col gap-1.5">
+      <p className={cn('flex items-center gap-1.5 text-xs font-semibold', isFullscreen ? 'text-white/80' : 'text-muted-foreground')}>
+        <KeyRound className="h-3.5 w-3.5" /> เช็คอินแบบ Manual
+      </p>
+      <div className="relative">
+        <Search
+          className={cn(
+            'pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2',
+            isFullscreen ? 'text-white/40' : 'text-muted-foreground'
           )}
-          {matches.map((p) => {
-            const checkedIn = checkedInIds.has(p.memberId)
-            return (
-              <button
-                key={p.memberId}
-                onClick={() => {
-                  onCheckin(p)
-                  setQuery('')
-                }}
-                disabled={checkedIn}
-                className={cn(
-                  'flex w-full items-center justify-between rounded-xl border border-border/70 px-3 py-2.5 text-left transition-colors',
-                  checkedIn ? 'cursor-not-allowed opacity-60' : 'hover:border-primary/50 hover:bg-secondary'
-                )}
-              >
-                <div>
-                  <p className="text-sm font-medium text-foreground">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {p.employeeId} · {p.department}
-                  </p>
-                </div>
-                {checkedIn ? (
-                  <Badge variant="secondary" className="gap-1 font-normal">
-                    <CheckCircle2 className="h-3 w-3" /> เช็คอินแล้ว
-                  </Badge>
-                ) : (
-                  <Badge className="font-normal">เช็คอิน</Badge>
-                )}
-              </button>
-            )
-          })}
+        />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="พิมพ์รหัสหรือชื่อ"
+          className={cn('h-8 pl-7 text-sm', isFullscreen && 'border-white/20 bg-white/5 text-white placeholder:text-white/40')}
+        />
+      </div>
+      {query.trim() && (
+        <div className="space-y-1">
+          {matches.length === 0 ? (
+            <p className={cn('rounded-lg px-2 py-1.5 text-xs', isFullscreen ? 'bg-white/5 text-white/50' : 'bg-muted text-muted-foreground')}>
+              ไม่พบผู้เข้าร่วมที่ตรงกัน
+            </p>
+          ) : (
+            matches.map((p) => {
+              const checkedIn = checkedInIds.has(p.memberId)
+              return (
+                <button
+                  key={p.memberId}
+                  onClick={() => {
+                    if (checkedIn) return
+                    onCheckin(p)
+                    setQuery('')
+                  }}
+                  disabled={checkedIn}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-colors',
+                    isFullscreen ? 'border-white/10' : 'border-border/60',
+                    checkedIn
+                      ? 'cursor-not-allowed opacity-60'
+                      : isFullscreen
+                        ? 'hover:bg-white/10'
+                        : 'hover:border-primary/50 hover:bg-secondary'
+                  )}
+                >
+                  <span className="min-w-0 truncate font-medium">{p.name}</span>
+                  {checkedIn ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                  ) : (
+                    <span className={cn('shrink-0 text-[10px] font-medium', isFullscreen ? 'text-accent' : 'text-primary')}>เช็คอิน</span>
+                  )}
+                </button>
+              )
+            })
+          )}
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </div>
   )
 }
