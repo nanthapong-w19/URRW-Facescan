@@ -108,7 +108,13 @@ export default function Login() {
     setMatchedName(member.name)
     loginAsAdmin(member)
     toast.success(`เข้าสู่ระบบสำเร็จ: ${member.name}`)
-    window.setTimeout(() => navigate(redirectTo, { replace: true }), 900)
+    // Round 45: this is the single entry point for BOTH the face-scan match
+    // and the manual employee-ID login (see handleManualLogin below), so the
+    // full-page success transition rendered from `matchedName` (further down
+    // in the JSX) covers both flows identically. The delay was bumped from
+    // 900ms to give that transition's circular reveal + icon pop + text
+    // fade-in enough time to fully play before the route actually changes.
+    window.setTimeout(() => navigate(redirectTo, { replace: true }), 1300)
   }
 
   useEffect(() => {
@@ -217,12 +223,13 @@ export default function Login() {
 
         <Card className="w-full border-accent/25 bg-card/[0.97] shadow-2xl backdrop-blur-sm">
           <CardHeader className="items-center text-center">
-            {/* Logo sits directly above the "FaceIn" wordmark, as one tight
-                lockup — sized up again (round 35) to give the crest even
-                more presence, with the wrapper's bottom margin dropped so
-                the logo sits closer to the wordmark below it (the small
-                residual gap comes from CardHeader's own space-y-1.5, not
-                an explicit margin here). */}
+            {/* Round 46: reverted round 45's inline logo+wordmark lockup
+                back to a large, stacked logo sitting on its own line
+                directly above "FaceIn" — sized back up to closely match the
+                reference image the user attached this round (a big centered
+                crest, with "FaceIn" beneath it as its own line), per
+                explicit request. Same size/glow treatment round 35 last
+                used before round 45 shrunk it. */}
             <div className="relative">
               <div className="absolute inset-0 -z-10 scale-[1.6] rounded-full bg-accent/25 blur-xl" aria-hidden />
               <img
@@ -271,13 +278,6 @@ export default function Login() {
                 ref={canvasRef}
                 className={cn('h-full w-full object-cover', (cameraState === 'loading' || cameraState === 'error') && 'hidden')}
               />
-              {matchedName && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-emerald-600/90 text-white backdrop-blur-sm animate-in fade-in zoom-in-95">
-                  <ShieldCheck className="h-14 w-14" />
-                  <p className="font-display text-xl font-bold">ยินดีต้อนรับ</p>
-                  <p className="text-lg">{matchedName}</p>
-                </div>
-              )}
             </div>
             {adminMembers.length === 0 && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
@@ -290,24 +290,12 @@ export default function Login() {
 
         <Card className="w-full border-border/70 bg-card/[0.97] shadow-lift backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2 text-base">
-              {/* Round 40: this badge used to be a plain lucide KeyRound icon
-                  inside a flat tinted circle. Replaced with a real image
-                  (a person + padlock badge) per request, given some visual
-                  "dimension" with a soft glow behind it (echoing the same
-                  glow-behind-logo treatment used elsewhere on this page)
-                  plus a drop-shadow on the image itself so it reads with
-                  depth rather than sitting flush against the card. */}
-              <span className="relative flex h-9 w-9 shrink-0 items-center justify-center">
-                <span aria-hidden className="absolute inset-0 scale-150 rounded-full bg-primary/25 blur-md" />
-                <img
-                  src="/295128.png"
-                  alt=""
-                  className="relative h-9 w-9 rounded-full object-cover drop-shadow-[0_3px_6px_rgba(0,0,0,0.35)]"
-                />
-              </span>
-              เข้าสู่ระบบด้วยรหัสผู้ดูแล
-            </CardTitle>
+            {/* Round 46: the badge image (person+padlock, added round 40)
+                that used to sit to the left of this title was removed per
+                explicit request — plain text now, no icon/image. The asset
+                itself (public/295128.png) and its recreation script are
+                left in place, just no longer referenced here. */}
+            <CardTitle className="font-display text-base">เข้าสู่ระบบด้วยรหัสผู้ดูแล</CardTitle>
             <CardDescription>สำรองสำหรับกรณีกล้องใช้งานไม่ได้</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -340,6 +328,40 @@ export default function Login() {
           ระบบสงวนสิทธิ์การเข้าใช้งานเฉพาะผู้ดูแลระบบที่ได้รับอนุญาตเท่านั้น
         </p>
       </div>
+
+      {/* Round 45: full-page success transition, shown for BOTH the
+          face-scan match and the manual employee-ID login — completeLogin
+          above is the single entry point for both flows, so this replaces
+          the old success overlay that used to live only inside the camera
+          preview box (invisible/irrelevant when the admin logged in via the
+          manual code card instead). A circular "iris" wipe reveals a
+          maroon-to-gold panel matching this page's own ambient backdrop
+          palette, the check badge pops in with a soft glow pulse, and the
+          welcome text fades in a beat later — then completeLogin's
+          setTimeout hands off to the meetings route once that's had time to
+          read. `fixed inset-0` means placement in the tree doesn't matter
+          for coverage; kept as the last element so it paints above
+          everything else on the page. Respects prefers-reduced-motion (see
+          index.css) by simply appearing instantly with no wipe/pop/fade. */}
+      {matchedName && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 overflow-hidden bg-[radial-gradient(circle_at_50%_45%,hsl(38_68%_45%)_0%,hsl(355_55%_30%)_45%,hsl(350_62%_12%)_100%)] animate-login-success-reveal"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm animate-login-success-pop">
+            <span aria-hidden className="absolute inset-0 rounded-full bg-emerald-400/30 blur-xl animate-login-success-glow" />
+            <ShieldCheck className="relative h-14 w-14 text-emerald-300 drop-shadow-[0_4px_10px_rgba(0,0,0,0.4)]" />
+          </div>
+          <div className="flex flex-col items-center gap-1 text-center animate-login-success-text">
+            <p className="font-display text-2xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
+              ยินดีต้อนรับ
+            </p>
+            <p className="text-lg text-white/90">{matchedName}</p>
+            <p className="mt-2 text-xs text-white/60">กำลังพาไปหน้าการประชุม...</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

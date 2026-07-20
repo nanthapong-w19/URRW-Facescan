@@ -156,3 +156,79 @@
     animation: none;
   }
 }
+
+/* /#/login's post-login success transition (round 45). Fires for BOTH the
+   face-scan match and the manual employee-ID login (Login.tsx's
+   completeLogin is the single trigger for both) right before navigating to
+   /meetings: a circular "iris" wipe reveals a full-page maroon-to-gold
+   panel echoing this page's own ambient backdrop palette, a check badge
+   pops in with a soft glow pulse behind it, and the welcome text fades up
+   a beat later. All four respect prefers-reduced-motion below by simply
+   not animating — the overlay just appears instantly at its end state
+   instead of wiping/popping/fading in. */
+@keyframes login-success-reveal {
+  from {
+    clip-path: circle(0% at 50% 50%);
+  }
+  to {
+    /* Deliberately overshoots 100% — a circle "big enough" is needed to
+       fully cover the corners of very wide/short viewports, since the
+       corner-to-center distance can exceed half the shorter dimension. */
+    clip-path: circle(150% at 50% 50%);
+  }
+}
+@keyframes login-success-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes login-success-glow {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.65;
+  }
+}
+@keyframes login-success-text {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.animate-login-success-reveal {
+  animation: login-success-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-login-success-pop {
+  animation: login-success-pop 0.5s 0.15s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.animate-login-success-glow {
+  animation: login-success-glow 1.6s ease-in-out infinite;
+}
+.animate-login-success-text {
+  animation: login-success-text 0.45s 0.35s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-login-success-reveal,
+  .animate-login-success-pop,
+  .animate-login-success-glow,
+  .animate-login-success-text {
+    animation: none;
+  }
+}
