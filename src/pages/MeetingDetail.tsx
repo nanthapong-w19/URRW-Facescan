@@ -336,6 +336,37 @@ async function exitFullscreenCompat() {
   if ((document as any).webkitExitFullscreen) return (document as any).webkitExitFullscreen()
 }
 
+// Auto-rotate to landscape when entering fullscreen, via the Screen
+// Orientation Lock API. Support for this is much patchier than the
+// Fullscreen API itself — desktop browsers reject it outright (there's no
+// "rotation" to lock on a monitor), and iOS Safari never implements `.lock`
+// at all (only `screen.orientation` itself exists there, no lock method) —
+// so every call here is best-effort and fails silently rather than
+// surfacing an error. Devices that DO support it (notably Chrome/Android)
+// get the intended behavior; everywhere else the fullscreen toggle itself
+// still works exactly as before, just without the auto-rotate.
+async function lockLandscapeCompat() {
+  try {
+    const orientation = (screen as any).orientation
+    if (orientation?.lock) {
+      await orientation.lock('landscape')
+    }
+  } catch {
+    // Most browsers only allow locking orientation while the document is
+    // genuinely fullscreen (some reject it in the CSS-only manual-fullscreen
+    // fallback), and plenty don't support it at all — none of that should
+    // block or error out the fullscreen toggle itself.
+  }
+}
+
+function unlockOrientationCompat() {
+  try {
+    ;(screen as any).orientation?.unlock?.()
+  } catch {
+    // ignore — nothing to clean up if it was never locked/supported
+  }
+}
+
 function MeetingScanner({
   registeredParticipants,
   checkedInIds,
@@ -409,9 +440,10 @@ function MeetingScanner({
   }, [])
 
   const toggleFullscreen = useCallback(async () => {
-    // Turning off — exit real fullscreen if it's engaged, and always clear
-    // the manual CSS fallback too (only one of the two is ever true, but
-    // clearing both keeps this in sync regardless of how we got here).
+    // Turning off — exit real fullscreen if it's engaged, release any
+    // orientation lock we may have taken, and always clear the manual CSS
+    // fallback too (only one of the two is ever true, but clearing both
+    // keeps this in sync regardless of how we got here).
     if (nativeFullscreen || manualFullscreen) {
       if (getFullscreenElement()) {
         try {
@@ -421,18 +453,24 @@ function MeetingScanner({
           // kiosk layout even if the native exit call itself failed
         }
       }
+      unlockOrientationCompat()
       setManualFullscreen(false)
       return
     }
     // Turning on — prefer the real Fullscreen API (it also hides the browser
     // chrome), but if it's missing or rejected on this device/browser (e.g.
     // iPhone Safari, in-app browsers), fall back to the CSS-only maximized
-    // view instead of leaving the button broken.
+    // view instead of leaving the button broken. Either way, also try to
+    // lock the screen to landscape — this only actually takes effect on
+    // devices/browsers that support the Screen Orientation Lock API (mainly
+    // Chrome/Android), and is a silent no-op everywhere else.
     if (containerRef.current) {
       try {
         await requestFullscreenCompat(containerRef.current)
+        await lockLandscapeCompat()
       } catch {
         setManualFullscreen(true)
+        await lockLandscapeCompat()
       }
     }
   }, [nativeFullscreen, manualFullscreen])
