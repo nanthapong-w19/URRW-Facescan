@@ -14,15 +14,17 @@ import type { Member } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type CameraState = 'idle' | 'loading' | 'ready' | 'error'
+type OverlayBox = { box: { x: number; y: number; width: number; height: number }; color: string; label: string } | null
 
 const SCAN_INTERVAL_MS = 500
 
-// Face-login page, gated to members with role === 'admin' who have already
-// registered a face on the Members page. On a match, records an "admin
-// session" (see lib/adminAuth.tsx) that unlocks the meeting-creation
-// pages. Includes a manual employee-ID fallback for when the camera isn't
-// usable, mirroring the same pattern as the manual check-in flow on
-// /scan — with an added role check so a non-admin employee ID can't get in.
+// Face-scan is now purely a live recognition display, NOT a login
+// mechanism — it draws a box around whatever face is in frame and labels
+// it with the matched member's name (any registered member, not just
+// admins), or "ไม่รู้จัก" if nothing matches. It never signs anyone in and
+// never navigates away on its own. The only way to actually log in is the
+// manual employee-ID form below, which still records an "admin session"
+// (see lib/adminAuth.tsx) and still requires role === 'admin'.
 export default function Login() {
   const { members } = useAppData()
   const { loginAsAdmin } = useAdminAuth()
@@ -30,17 +32,14 @@ export default function Login() {
   const location = useLocation()
   const redirectTo = (location.state as { from?: string } | null)?.from ?? '/meetings'
 
-  const adminMembers = useMemo(
-    () => members.filter((m) => m.role === 'admin' && m.faceStatus === 'registered'),
-    [members]
-  )
+  const registeredMembers = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<number | null>(null)
   const paintRafRef = useRef<number | null>(null)
-  const matchedRef = useRef(false)
+  const overlayRef = useRef<OverlayBox>(null)
 
   const [cameraState, setCameraState] = useState<CameraState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -62,7 +61,24 @@ export default function Login() {
         ctx.translate(canvas.width, 0)
         ctx.scale(-1, 1)
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const overlay = overlayRef.current
+        if (overlay) {
+          ctx.strokeStyle = overlay.color
+          ctx.lineWidth = 4
+          ctx.strokeRect(overlay.box.x, overlay.box.y, overlay.box.width, overlay.box.height)
+        }
         ctx.restore()
+
+        if (overlay) {
+          const { box, color, label } = overlay
+          const mirroredX = canvas.width - box.x - box.width
+          ctx.font = '600 20px "Plus Jakarta Sans", sans-serif'
+          const textWidth = ctx.measureText(label).width
+          ctx.fillStyle = color
+          ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText(label, mirroredX + 6, box.y - 11)
+        }
       }
     }
     paintRafRef.current = requestAnimationFrame(paintLoop)
@@ -101,19 +117,18 @@ export default function Login() {
     streamRef.current = null
   }, [])
 
+  // The only entry point left that actually logs anyone in — called from
+  // handleManualLogin below. Face-scan matches never reach this function
+  // anymore; they only ever update the on-screen overlay.
   function completeLogin(member: Member) {
-    if (matchedRef.current) return
-    matchedRef.current = true
     stopCamera()
     setMatchedName(member.name)
     loginAsAdmin(member)
     toast.success(`เข้าสู่ระบบสำเร็จ: ${member.name}`)
-    // Round 45: this is the single entry point for BOTH the face-scan match
-    // and the manual employee-ID login (see handleManualLogin below), so the
-    // full-page success transition rendered from `matchedName` (further down
-    // in the JSX) covers both flows identically. The delay was bumped from
-    // 900ms to give that transition's circular reveal + icon pop + text
-    // fade-in enough time to fully play before the route actually changes.
+    // Round 45: the full-page success transition rendered from `matchedName`
+    // (further down in the JSX). The delay gives that transition's circular
+    // reveal + icon pop + text fade-in enough time to fully play before the
+    // route actually changes.
     window.setTimeout(() => navigate(redirectTo, { replace: true }), 1300)
   }
 
@@ -127,10 +142,12 @@ export default function Login() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Live recognition only — matches against every registered member (not
+  // just admins, since this no longer gates login) and just updates the
+  // overlay the paint loop draws. Never calls completeLogin.
   useEffect(() => {
     if (cameraState !== 'ready') return
     timerRef.current = window.setInterval(async () => {
-      if (matchedRef.current) return
       const video = videoRef.current
       if (!video || video.readyState < 2) return
       let result
@@ -139,23 +156,30 @@ export default function Login() {
       } catch {
         return
       }
-      if (!result) return
+      if (!result) {
+        overlayRef.current = null
+        return
+      }
 
       let best: { member: Member; distance: number } | null = null
-      for (const m of adminMembers) {
+      for (const m of registeredMembers) {
         if (!m.faceDescriptor) continue
         const distance = descriptorDistance(result.descriptor, m.faceDescriptor)
         if (!best || distance < best.distance) best = { member: m, distance }
       }
-      if (best && best.distance < MATCH_THRESHOLD) {
-        completeLogin(best.member)
+
+      const isMatch = best && best.distance < MATCH_THRESHOLD
+      overlayRef.current = {
+        box: result.box,
+        color: isMatch ? '#10b981' : '#f59e0b',
+        label: isMatch ? best!.member.name : 'ไม่รู้จัก',
       }
     }, SCAN_INTERVAL_MS)
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraState, adminMembers])
+  }, [cameraState, registeredMembers])
 
   function handleManualLogin() {
     setManualError('')
@@ -219,7 +243,7 @@ export default function Login() {
             page still has a real <h1> landmark for assistive tech — shadcn's
             CardTitle below renders a <div>, not a heading element, so
             without this the page would have no heading landmark at all. */}
-        <h1 className="sr-only">เข้าสู่ระบบด้วยการสแกนใบหน้า</h1>
+        <h1 className="sr-only">เข้าสู่ระบบผู้ดูแลระบบ</h1>
 
         <Card className="w-full border-accent/25 bg-card/[0.97] shadow-2xl backdrop-blur-sm">
           <CardHeader className="items-center text-center">
@@ -279,10 +303,10 @@ export default function Login() {
                 className={cn('h-full w-full object-cover', (cameraState === 'loading' || cameraState === 'error') && 'hidden')}
               />
             </div>
-            {adminMembers.length === 0 && (
+            {registeredMembers.length === 0 && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                ยังไม่มีผู้ดูแลระบบที่ลงทะเบียนใบหน้าไว้ กรุณาไปที่หน้า &quot;สมาชิก&quot; ตั้งค่า role เป็น admin
-                และลงทะเบียนใบหน้าก่อน หรือใช้การเข้าสู่ระบบด้วยรหัสบุคลากรด้านล่าง
+                ยังไม่มีสมาชิกที่ลงทะเบียนใบหน้าไว้ กล้องจะขึ้น &quot;ไม่รู้จัก&quot; สำหรับทุกคนจนกว่าจะลงทะเบียนใบหน้าไว้ที่หน้า
+                &quot;สมาชิก&quot;
               </p>
             )}
           </CardContent>
