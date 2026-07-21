@@ -706,6 +706,20 @@ function MeetingScanner({
           ctx.strokeRect(overlay.box.x, overlay.box.y, overlay.box.width, overlay.box.height)
         }
         ctx.restore()
+
+        // Name label above the box — box coordinates come from the
+        // un-mirrored detector, so the label's x has to be mirrored
+        // separately to line up with the mirrored box drawn above.
+        if (overlay) {
+          const { box, color, label } = overlay
+          const mirroredX = canvas.width - box.x - box.width
+          ctx.font = '600 20px "Plus Jakarta Sans", sans-serif'
+          const textWidth = ctx.measureText(label).width
+          ctx.fillStyle = color
+          ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText(label, mirroredX + 6, box.y - 11)
+        }
       }
     }
     paintRafRef.current = requestAnimationFrame(paintLoop)
@@ -781,7 +795,7 @@ function MeetingScanner({
       overlayRef.current = {
         box: result.box,
         color: isMatch ? '#10b981' : '#f59e0b',
-        label: isMatch ? best!.participant.name : 'ไม่ใช่ผู้เข้าร่วมประชุมนี้',
+        label: isMatch ? best!.participant.name : 'ไม่ใช่ผู้เข้าร่วมประชุม',
       }
 
       if (isMatch) {

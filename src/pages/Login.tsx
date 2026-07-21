@@ -305,32 +305,30 @@ export default function Login() {
             </div>
             {registeredMembers.length === 0 && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                ยังไม่มีสมาชิกที่ลงทะเบียนใบหน้าไว้ กล้องจะขึ้น &quot;ไม่รู้จัก&quot; สำหรับทุกคนจนกว่าจะลงทะเบียนใบหน้าไว้ที่หน้า
-                &quot;สมาชิก&quot;
+                ยังไม่มีบุคลากรที่ลงทะเบียนใบหน้าไว้ กล้องจะขึ้น &quot;ไม่รู้จัก&quot; สำหรับทุกคนจนกว่าจะลงทะเบียนใบหน้าไว้ที่หน้า
+                &quot;บุคลากร&quot;
               </p>
             )}
           </CardContent>
         </Card>
 
         <Card className="w-full border-border/70 bg-card/[0.97] shadow-lift backdrop-blur-sm">
-          <CardHeader>
-            {/* Round 46: the badge image (person+padlock, added round 40)
-                that used to sit to the left of this title was removed per
-                explicit request — plain text now, no icon/image. The asset
-                itself (public/295128.png) and its recreation script are
-                left in place, just no longer referenced here. */}
-            <CardTitle className="font-display text-base">เข้าสู่ระบบด้วยรหัสผู้ดูแล</CardTitle>
-            <CardDescription>สำรองสำหรับกรณีกล้องใช้งานไม่ได้</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="manual-id">รหัสบุคลากร</Label>
+          {/* No more separate CardHeader — "เข้าสู่ระบบด้วยรหัสผู้ดูแล" now
+              sits directly as the input's own label instead of a title
+              block above it, so the card opens straight into the field
+              with a tight label-to-input gap rather than a full header's
+              worth of spacing. */}
+          <CardContent className="space-y-3 pt-4 sm:pt-5">
+            <div className="space-y-1">
+              <Label htmlFor="manual-id" className="font-display text-sm font-medium text-foreground">
+                เข้าสู่ระบบด้วยรหัสผู้ดูแล
+              </Label>
               <Input
                 id="manual-id"
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleManualLogin()}
-                placeholder="เช่น T-0012"
+                placeholder="กรอกรหัสบุคลากร"
                 autoComplete="off"
                 autoCapitalize="characters"
                 autoCorrect="off"

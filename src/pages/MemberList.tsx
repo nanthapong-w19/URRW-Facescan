@@ -143,10 +143,10 @@ export default function MemberList() {
     try {
       if (editingId) {
         await updateMember(editingId, { ...form })
-        toast.success('แก้ไขข้อมูลสมาชิกเรียบร้อย')
+        toast.success('แก้ไขข้อมูลบุคลากรเรียบร้อย')
       } else {
         await addMember({ ...form })
-        toast.success('เพิ่มสมาชิกใหม่เรียบร้อย')
+        toast.success('เพิ่มบุคลากรใหม่เรียบร้อย')
       }
       setFormOpen(false)
     } catch (err) {
@@ -186,12 +186,12 @@ export default function MemberList() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">
-            จัดการสมาชิก
+            จัดการบุคลากร
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">เพิ่ม แก้ไข และลงทะเบียนใบหน้าให้สมาชิกในระบบ</p>
+          <p className="mt-1 text-sm text-muted-foreground">เพิ่ม แก้ไข และลงทะเบียนใบหน้าให้บุคลากรในระบบ</p>
         </div>
         <Button onClick={openAddForm} className="gap-1.5 shadow-soft">
-          <UserPlus className="h-4 w-4" /> เพิ่มสมาชิกใหม่
+          <UserPlus className="h-4 w-4" /> เพิ่มบุคลากรใหม่
         </Button>
       </div>
 
@@ -199,7 +199,7 @@ export default function MemberList() {
         <CardHeader className="gap-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="font-display text-base">รายชื่อสมาชิก</CardTitle>
+              <CardTitle className="font-display text-base">รายชื่อบุคลากร</CardTitle>
               <CardDescription>ทั้งหมด {filtered.length} คน</CardDescription>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -232,7 +232,7 @@ export default function MemberList() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>สมาชิก</TableHead>
+                <TableHead>บุคลากร</TableHead>
                 <TableHead>กลุ่มสาระการเรียนรู้</TableHead>
                 <TableHead>ตำแหน่ง</TableHead>
                 <TableHead>Role</TableHead>
@@ -244,7 +244,7 @@ export default function MemberList() {
               {filtered.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                    ไม่พบสมาชิกที่ตรงกับเงื่อนไข
+                    ไม่พบบุคลากรที่ตรงกับเงื่อนไข
                   </TableCell>
                 </TableRow>
               )}
@@ -337,8 +337,8 @@ export default function MemberList() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display">{editingId ? 'แก้ไขข้อมูลสมาชิก' : 'เพิ่มสมาชิกใหม่'}</DialogTitle>
-            <DialogDescription>กรอกข้อมูลสมาชิกให้ครบถ้วนก่อนบันทึก</DialogDescription>
+            <DialogTitle className="font-display">{editingId ? 'แก้ไขข้อมูลบุคลากร' : 'เพิ่มบุคลากรใหม่'}</DialogTitle>
+            <DialogDescription>กรอกข้อมูลบุคลากรให้ครบถ้วนก่อนบันทึก</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -405,7 +405,7 @@ export default function MemberList() {
               <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>
                 ยกเลิก
               </Button>
-              <Button type="submit">{editingId ? 'บันทึกการแก้ไข' : 'เพิ่มสมาชิก'}</Button>
+              <Button type="submit">{editingId ? 'บันทึกการแก้ไข' : 'เพิ่มบุคลากร'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -415,7 +415,7 @@ export default function MemberList() {
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-display">ยืนยันการลบสมาชิก</DialogTitle>
+            <DialogTitle className="font-display">ยืนยันการลบบุคลากร</DialogTitle>
             <DialogDescription>
               คุณต้องการลบ <strong>{deleteTarget?.name}</strong> ออกจากระบบใช่หรือไม่? การลบข้อมูลนี้ไม่สามารถย้อนกลับได้
             </DialogDescription>
@@ -425,7 +425,7 @@ export default function MemberList() {
               ยกเลิก
             </Button>
             <Button variant="destructive" onClick={handleConfirmDelete} className="gap-1.5">
-              <Trash2 className="h-4 w-4" /> ลบสมาชิก
+              <Trash2 className="h-4 w-4" /> ลบบุคลากร
             </Button>
           </DialogFooter>
         </DialogContent>
