@@ -263,13 +263,15 @@ export default function Login() {
               />
             </div>
             {/* "FaceIn" wordmark given more visual weight/dimension: larger
-                size, a maroon-to-gold gradient fill (bg-clip-text) instead
-                of flat foreground color, and a soft drop-shadow so the
-                gradient reads with some depth rather than looking pasted
-                flat onto the card. Pure Latin text, so tracking-tight is
-                appropriate here (unlike the Thai headings elsewhere — see
-                round 31's notes on why Thai text had it removed). */}
-            <CardTitle className="font-display bg-gradient-to-r from-primary via-[hsl(350_58%_38%)] to-accent bg-clip-text text-3xl font-bold tracking-tight text-transparent drop-shadow-[0_2px_3px_rgba(0,0,0,0.18)] sm:text-4xl">
+                size, the same maroon-to-gold gradient fill (bg-clip-text)
+                as before but now animated — bg-size 200% + an animated
+                background-position sweeps the gradient back and forth —
+                and a soft drop-shadow so it reads with some depth rather
+                than looking pasted flat onto the card. Pure Latin text, so
+                tracking-tight is appropriate here (unlike the Thai headings
+                elsewhere — see round 31's notes on why Thai text had it
+                removed). */}
+            <CardTitle className="font-display animate-gradient-move bg-gradient-to-r from-primary via-[hsl(350_58%_38%)] to-accent bg-[length:200%_auto] bg-clip-text text-3xl font-bold tracking-tight text-transparent drop-shadow-[0_2px_3px_rgba(0,0,0,0.18)] sm:text-4xl">
               FaceIn
             </CardTitle>
             <CardDescription className="text-center">ระบบเช็คอินราชกัญญาฯ ด้วยเทคโนโลยีจดจำใบหน้า</CardDescription>
