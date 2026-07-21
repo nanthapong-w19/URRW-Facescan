@@ -8,13 +8,26 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Search, Users, Loader2, CalendarPlus } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { createMeeting } from '@/lib/store'
+import { MEETING_ROOMS } from '@/lib/constants'
+
+// Hidden system account — never shown, searchable, or selectable as a
+// meeting participant (not a real invitee, so it shouldn't appear in the
+// roster this page picks from, nor get swept in by "เลือกทั้งหมด").
+const HIDDEN_EMPLOYEE_IDS = ['superurrwnm']
 
 export default function CreateMeeting() {
-  const { members } = useAppData()
+  const { members: allMembers } = useAppData()
   const { admin } = useAdminAuth()
   const navigate = useNavigate()
 
@@ -26,8 +39,13 @@ export default function CreateMeeting() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [submitting, setSubmitting] = useState(false)
 
-  // Anyone in the roster can be invited — not just role === 'user' — since
-  // an admin may reasonably want to invite another admin too.
+  const members = useMemo(
+    () => allMembers.filter((m) => !HIDDEN_EMPLOYEE_IDS.includes(m.employeeId.toLowerCase())),
+    [allMembers]
+  )
+
+  // Anyone in the (visible) roster can be invited — not just role === 'user'
+  // — since an admin may reasonably want to invite another admin too.
   const filteredMembers = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return members
@@ -43,6 +61,21 @@ export default function CreateMeeting() {
       else next.add(id)
       return next
     })
+  }
+
+  // Bulk-invite everyone who can actually be matched at the face-scan
+  // check-in (faceStatus === 'registered') — not the whole roster, since
+  // members without a registered face can only check in manually anyway.
+  const membersWithFace = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
+
+  // Toggle: press once to select everyone with a registered face, press
+  // again (once they're all already selected) to clear the selection
+  // entirely, rather than just the face-having subset — a second press is
+  // read as "start over," not "un-invite only the auto-selected ones."
+  const allWithFaceSelected = membersWithFace.length > 0 && membersWithFace.every((m) => selectedIds.has(m.id))
+
+  function toggleSelectAllWithFace() {
+    setSelectedIds(allWithFaceSelected ? new Set() : new Set(membersWithFace.map((m) => m.id)))
   }
 
   async function handleSubmit() {
@@ -96,7 +129,18 @@ export default function CreateMeeting() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="meeting-location">สถานที่</Label>
-              <Input id="meeting-location" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="เช่น ห้องประชุมใหญ่" />
+              <Select value={location || undefined} onValueChange={setLocation}>
+                <SelectTrigger id="meeting-location">
+                  <SelectValue placeholder="เลือกห้องประชุม" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MEETING_ROOMS.map((room) => (
+                    <SelectItem key={room} value={room}>
+                      {room}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -107,13 +151,22 @@ export default function CreateMeeting() {
       </Card>
 
       <Card className="border-border/70 shadow-soft">
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <div>
             <CardTitle className="font-display flex items-center gap-2 text-base">
               <Users className="h-4 w-4 text-primary" /> เลือกผู้เข้าร่วม
             </CardTitle>
             <CardDescription>เลือกแล้ว {selectedIds.size} คน จากทั้งหมด {members.length} คน</CardDescription>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={toggleSelectAllWithFace}
+            disabled={membersWithFace.length === 0}
+          >
+            {allWithFaceSelected ? 'ยกเลิกทั้งหมด' : 'เลือกทั้งหมด'}
+          </Button>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="relative">
@@ -130,22 +183,22 @@ export default function CreateMeeting() {
                 htmlFor={`member-${m.id}`}
                 className="flex cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-2 hover:bg-secondary"
               >
-                <div className="flex items-center gap-2.5">
+                <div className="flex min-w-0 items-center gap-2.5">
                   <Checkbox
                     id={`member-${m.id}`}
                     checked={selectedIds.has(m.id)}
                     onCheckedChange={() => toggleMember(m.id)}
                   />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{m.name}</p>
-                    <p className="text-xs text-muted-foreground">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{m.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
                       {m.employeeId} · {m.department}
                       {m.position ? ` · ${m.position}` : ''}
                     </p>
                   </div>
                 </div>
                 {m.role === 'admin' && (
-                  <Badge variant="secondary" className="font-normal">
+                  <Badge variant="secondary" className="shrink-0 font-normal">
                     admin
                   </Badge>
                 )}

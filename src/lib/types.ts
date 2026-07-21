@@ -71,6 +71,19 @@ export interface CheckinRow {
   facein_members: { name: string; department: string } | null
 }
 
+// Shape of a raw `facein_checkins` row as delivered by a Realtime
+// postgres_changes event — table columns only, unlike CheckinRow above
+// which includes the `facein_members` join a PostgREST select adds. Used to
+// patch CheckinRecord state directly from a realtime event instead of
+// re-fetching (see src/lib/realtimeSync.ts).
+export interface CheckinChangeRow {
+  id: string
+  member_id: string
+  checked_in_at: string
+  method: CheckinMethod
+  confidence: number | null
+}
+
 // A meeting created by an admin (after face-login), with a chosen list of
 // participants drawn from the member roster. This app has no real
 // authentication system — see MemberRole above — so "created by an admin"

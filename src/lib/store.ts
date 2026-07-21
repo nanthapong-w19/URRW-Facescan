@@ -26,7 +26,10 @@ import type {
 
 const CHECKINS_FETCH_LIMIT = 500 // recent-history window; plenty for a live feed + today's stats
 
-function rowToMember(row: MemberRow): Member {
+// Exported so src/lib/realtimeSync.ts can reuse the exact same row->domain
+// mapping when patching state from a Realtime event, instead of duplicating
+// it — row-shape knowledge stays in this one file either way.
+export function rowToMember(row: MemberRow): Member {
   return {
     id: row.id,
     employeeId: row.employee_id,
@@ -36,6 +39,10 @@ function rowToMember(row: MemberRow): Member {
     role: row.role === 'admin' ? 'admin' : 'user',
     faceStatus: row.face_descriptor ? 'registered' : 'unregistered',
     faceDescriptor: row.face_descriptor ?? null,
+    // Not present on the lean select getMembers() below uses — `?? null`
+    // here means "not fetched" and "fetched as NULL" both resolve to the
+    // same `null`, which is what every caller of Member.photo already
+    // treats as "no photo, fall back to initials" (see MemberList.tsx).
     photo: row.photo_url ?? null,
     createdAt: row.created_at,
   }
@@ -102,13 +109,39 @@ function describeDbError(err: unknown): string {
   return `เกิดข้อผิดพลาดในการบันทึกข้อมูล: ${message}`
 }
 
+// Columns for the shared roster query behind useAppData() — every field
+// EXCEPT photo_url. Members register a face as a full-resolution base64
+// JPEG (see FaceCaptureDialog.tsx), measured at ~60-120KB per member versus
+// ~1KB for face_descriptor — by far the heaviest thing this table holds.
+// useAppData is consumed by five pages, only one of which (MemberList.tsx)
+// ever displays a photo, so it's fetched there instead, on demand, via
+// getMemberPhotos() below — see the "column trimming" decision in the
+// architecture-review grilling session for the numbers behind this split.
+const MEMBER_COLUMNS =
+  'id, employee_id, name, email, department, position, role, face_descriptor, registered_at, created_at, updated_at'
+
 export async function getMembers(): Promise<Member[]> {
   const { data, error } = await supabase
     .from('facein_members')
-    .select('*')
+    .select(MEMBER_COLUMNS)
     .order('created_at', { ascending: false })
   if (error) throw new Error(describeDbError(error))
-  return (data as MemberRow[]).map(rowToMember)
+  return (data as unknown as MemberRow[]).map(rowToMember)
+}
+
+// Photos only — used by MemberList.tsx to render avatars, decoupled from
+// the shared lean roster query above. Not realtime-synced: a photo added
+// from a different kiosk while this page is open won't appear until it's
+// reloaded (acceptable trade-off — the member's faceStatus badge itself
+// still updates live via useAppData, only the thumbnail lags).
+export async function getMemberPhotos(): Promise<Record<string, string | null>> {
+  const { data, error } = await supabase.from('facein_members').select('id, photo_url')
+  if (error) throw new Error(describeDbError(error))
+  const photos: Record<string, string | null> = {}
+  for (const row of data as { id: string; photo_url: string | null }[]) {
+    photos[row.id] = row.photo_url
+  }
+  return photos
 }
 
 export async function getCheckins(): Promise<CheckinRecord[]> {
@@ -226,9 +259,15 @@ function rowToMeeting(
   }
 }
 
-// Selected once here and reused by both getMeetings/getMeeting so the two
-// queries can't silently drift apart in which columns they join.
-const MEETING_PARTICIPANTS_SELECT =
+// Two variants of the same join, split by how much each caller needs:
+// getMeetings() (the list view) only ever reads participants.length for a
+// headcount, so it skips face_descriptor — getMeeting() (the detail view)
+// keeps it, since MeetingDetail's face scanner needs it to match a scanned
+// face against this meeting's invitees. Kept side by side so they can't
+// silently drift apart in which OTHER columns they join.
+const MEETING_PARTICIPANTS_SELECT_LEAN =
+  'id, meeting_id, member_id, facein_members(id, name, department, position, employee_id)'
+const MEETING_PARTICIPANTS_SELECT_FULL =
   'id, meeting_id, member_id, facein_members(id, name, department, position, employee_id, face_descriptor)'
 
 export async function getMeetings(): Promise<Meeting[]> {
@@ -238,7 +277,7 @@ export async function getMeetings(): Promise<Meeting[]> {
     { data: checkinRows, error: checkinsErr },
   ] = await Promise.all([
     supabase.from('facein_meetings').select('*').order('created_at', { ascending: false }),
-    supabase.from('facein_meeting_participants').select(MEETING_PARTICIPANTS_SELECT),
+    supabase.from('facein_meeting_participants').select(MEETING_PARTICIPANTS_SELECT_LEAN),
     // Only the meeting_id column is needed here — this powers the
     // attendance-rate summary on the meetings list, not the full
     // check-in detail (that's fetched separately, per-meeting, by
@@ -260,7 +299,7 @@ export async function getMeeting(id: string): Promise<Meeting | null> {
   const [{ data: meetingRow, error: meetingErr }, { data: participantRows, error: participantsErr }] =
     await Promise.all([
       supabase.from('facein_meetings').select('*').eq('id', id).maybeSingle(),
-      supabase.from('facein_meeting_participants').select(MEETING_PARTICIPANTS_SELECT).eq('meeting_id', id),
+      supabase.from('facein_meeting_participants').select(MEETING_PARTICIPANTS_SELECT_FULL).eq('meeting_id', id),
     ])
   if (meetingErr) throw new Error(describeDbError(meetingErr))
   if (participantsErr) throw new Error(describeDbError(participantsErr))
@@ -305,6 +344,27 @@ export async function createMeeting(input: {
   return created
 }
 
+// Used by MeetingDetail.tsx's inline click-to-edit fields (date/time,
+// location, description) — partial, like updateMember, since each field is
+// saved independently rather than through one big edit form.
+export async function updateMeeting(
+  id: string,
+  patch: Partial<Pick<Meeting, 'title' | 'description' | 'meetingTime' | 'location'>>
+): Promise<Meeting> {
+  const dbPatch: Record<string, unknown> = {}
+  if (patch.title !== undefined) dbPatch.title = patch.title
+  if (patch.description !== undefined) dbPatch.description = patch.description || null
+  if (patch.meetingTime !== undefined) dbPatch.meeting_time = patch.meetingTime
+  if (patch.location !== undefined) dbPatch.location = patch.location || null
+
+  const { error } = await supabase.from('facein_meetings').update(dbPatch).eq('id', id)
+  if (error) throw new Error(describeDbError(error))
+
+  const updated = await getMeeting(id)
+  if (!updated) throw new Error('แก้ไขการประชุมสำเร็จ แต่ไม่พบข้อมูลที่อัปเดต')
+  return updated
+}
+
 export async function deleteMeeting(id: string): Promise<void> {
   const { error } = await supabase.from('facein_meetings').delete().eq('id', id)
   if (error) throw new Error(describeDbError(error))
@@ -315,7 +375,8 @@ export async function deleteMeeting(id: string): Promise<void> {
 // meeting (via the face scanner on MeetingDetail.tsx), separate from the
 // daily kiosk check-ins in facein_checkins/CheckinRecord above.
 
-function rowToMeetingCheckin(row: MeetingCheckinRow): MeetingCheckin {
+// Exported for src/lib/realtimeSync.ts — see rowToMember above for why.
+export function rowToMeetingCheckin(row: MeetingCheckinRow): MeetingCheckin {
   return {
     id: row.id,
     meetingId: row.meeting_id,

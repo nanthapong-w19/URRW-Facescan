@@ -206,21 +206,21 @@ export default function Dashboard() {
             ) : (
               <ul className="divide-y divide-border/70">
                 {recent.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                    <div className="flex items-center gap-3">
+                  <li key={c.id} className="flex items-center justify-between gap-2 py-3 first:pt-0 last:pb-0 sm:gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/15 to-accent/25 font-display text-sm font-semibold text-primary">
                         {c.name.charAt(0)}
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{c.name}</p>
-                        <p className="text-xs text-muted-foreground">{c.department}</p>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{c.department}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                       <Badge
                         variant="outline"
                         className={cn(
-                          'gap-1 border-none text-xs font-normal',
+                          'hidden gap-1 border-none text-xs font-normal sm:inline-flex',
                           c.method === 'face'
                             ? 'bg-primary/10 text-primary'
                             : 'bg-muted text-muted-foreground'
@@ -229,7 +229,13 @@ export default function Dashboard() {
                         <CircleCheck className="h-3 w-3" />
                         {c.method === 'face' ? 'สแกนใบหน้า' : 'เช็คอินด้วยตนเอง'}
                       </Badge>
-                      <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">{timeAgo(c.time)}</span>
+                      <CircleCheck
+                        className={cn(
+                          'h-4 w-4 shrink-0 sm:hidden',
+                          c.method === 'face' ? 'text-primary' : 'text-muted-foreground'
+                        )}
+                      />
+                      <span className="w-16 shrink-0 text-right text-xs text-muted-foreground sm:w-20">{timeAgo(c.time)}</span>
                     </div>
                   </li>
                 ))}

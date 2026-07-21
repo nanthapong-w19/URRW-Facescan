@@ -71,12 +71,19 @@
        default gives it — 1.6 keeps stacked marks from visually crowding
        the line above/below. */
     line-height: 1.6;
+    /* Safety net: on narrow phones, one untruncated row (a long department
+       name, a creator name, etc.) can push wider than its container. This
+       stops that from becoming a page-wide horizontal scrollbar/shift —
+       the offending element still clips instead, which is the better
+       failure mode until each one is fixed at the source. */
+    overflow-x: hidden;
   }
   body {
     @apply bg-background text-foreground;
     font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    overflow-x: hidden;
   }
   ::selection {
     background-color: hsl(var(--accent) / 0.35);

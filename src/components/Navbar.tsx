@@ -24,30 +24,32 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-2.5">
-          <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-10 w-10 object-contain" />
-          <div className="leading-tight">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-3 sm:gap-3 sm:px-6 lg:px-8">
+        <div className="flex min-w-0 shrink items-center gap-2 sm:gap-2.5">
+          <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-9 w-9 shrink-0 object-contain sm:h-10 sm:w-10" />
+          <div className="min-w-0 leading-tight">
             {/* "FaceIn" wordmark given the same maroon-to-gold gradient +
                 drop-shadow treatment as the login page's card title (see
                 Login.tsx, round 34) so the brand mark reads consistently
                 with some depth wherever it appears, not just on /#/login. */}
-            <p className="font-display bg-gradient-to-r from-primary via-[hsl(350_65%_42%)] to-accent bg-clip-text text-[15px] font-bold tracking-tight text-transparent drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
+            <p className="font-display truncate bg-gradient-to-r from-primary via-[hsl(350_65%_42%)] to-accent bg-clip-text text-[15px] font-bold tracking-tight text-transparent drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
               FaceIn
             </p>
-            <p className="text-[11px] text-muted-foreground">ระบบเช็คอินราชกัญญาฯ</p>
+            <p className="hidden truncate text-[11px] text-muted-foreground xs:block">ระบบเช็คอินราชกัญญาฯ</p>
           </div>
         </div>
 
-        <nav className="flex items-center gap-1 rounded-full border border-border/70 bg-card/60 p-1 shadow-soft">
+        <nav className="flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-card/60 p-1 shadow-soft">
           {links.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
+              aria-label={label}
+              title={label}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-all duration-200',
+                  'flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition-all duration-200 sm:px-3.5',
                   isActive
                     ? 'bg-primary text-primary-foreground shadow-soft'
                     : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
@@ -60,7 +62,7 @@ export default function Navbar() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <div className="hidden items-center gap-2 sm:flex">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>

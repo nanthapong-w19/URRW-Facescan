@@ -7,6 +7,12 @@ module.exports = {
   ],
   theme: {
     extend: {
+      // Sits below Tailwind's default `sm` (640px) — a few spots (Navbar's
+      // subtitle) only need to hide on the very narrowest phones, not the
+      // whole phone range that `sm:` would cut off.
+      screens: {
+        xs: '420px',
+      },
       fontFamily: {
         sans: ['"IBM Plex Sans Thai"', '"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         display: ['Prompt', '"IBM Plex Sans Thai"', 'ui-sans-serif', 'system-ui', 'sans-serif'],

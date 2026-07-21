@@ -4,7 +4,15 @@ import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   ArrowLeft,
   CalendarDays,
@@ -22,21 +30,45 @@ import {
   Search,
   Maximize2,
   Minimize2,
+  Check,
+  X,
 } from 'lucide-react'
-import { getMeeting, deleteMeeting, getMeetingCheckins, recordMeetingCheckin } from '@/lib/store'
+import { getMeeting, deleteMeeting, getMeetingCheckins, recordMeetingCheckin, updateMeeting } from '@/lib/store'
 import { supabase } from '@/lib/supabaseClient'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { loadFaceModels, detectFaceWithDescriptor, descriptorDistance, MATCH_THRESHOLD } from '@/lib/faceEngine'
 import { describeGetUserMediaError } from '@/lib/cameraHelpers'
-import type { Meeting, MeetingCheckin, MeetingParticipant } from '@/lib/types'
+import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
+import type { RealtimeChange } from '@/lib/realtimeSync'
+import { MEETING_ROOMS } from '@/lib/constants'
+import type { Meeting, MeetingCheckin, MeetingCheckinRow, MeetingParticipant } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-function formatMeetingTime(iso: string | null) {
-  if (!iso) return 'ยังไม่กำหนดเวลา'
+// `<input type="datetime-local">` wants local wall-clock time
+// (YYYY-MM-DDTHH:mm), not the UTC-based ISO string Meeting.meetingTime
+// stores — shift by the timezone offset before slicing, so editing a
+// meeting shows the same local time formatMeetingTime displays.
+function toDatetimeLocalValue(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
+// Split so the "วันและเวลา" tile can put the date and time on separate
+// lines — `time` is null when there's nothing to show on a second line
+// (no meetingTime set at all).
+function formatMeetingDateParts(iso: string | null): { date: string; time: string | null } {
+  if (!iso) return { date: 'ยังไม่กำหนดเวลา', time: null }
   try {
-    return new Date(iso).toLocaleString('th-TH', { dateStyle: 'full', timeStyle: 'short' })
+    const d = new Date(iso)
+    return {
+      date: d.toLocaleDateString('th-TH', { dateStyle: 'full' }),
+      time: d.toLocaleTimeString('th-TH', { timeStyle: 'short' }),
+    }
   } catch {
-    return iso
+    return { date: iso, time: null }
   }
 }
 
@@ -128,23 +160,38 @@ export default function MeetingDetail() {
   }, [id])
 
   // Live updates so a kiosk screen showing this page reflects check-ins
-  // that happen from a *different* device scanning the same meeting.
+  // that happen from a *different* device scanning the same meeting. Each
+  // event patches the one row it describes (via realtimeSync.ts) instead
+  // of refetching this meeting's whole check-in list on every event; a
+  // reconnect after a dropped websocket still gets a full refetch as a
+  // safety net (see the `hasConnectedBefore` gate below), so an event
+  // missed while disconnected can't leave this screen silently stale.
   useEffect(() => {
     if (!id) return
+    let hasConnectedBefore = false
     const channel = supabase
       .channel(`facein-meeting-checkins-${id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'facein_meeting_checkins', filter: `meeting_id=eq.${id}` },
-        () => {
-          getMeetingCheckins(id)
-            .then(setCheckins)
-            .catch(() => {
-              // non-critical: the next successful refresh will catch up
-            })
+        (payload) => {
+          setCheckins((prev) =>
+            applyMeetingCheckinEvent(prev, payload as unknown as RealtimeChange<MeetingCheckinRow>)
+          )
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          if (hasConnectedBefore) {
+            getMeetingCheckins(id)
+              .then(setCheckins)
+              .catch(() => {
+                // non-critical: the next successful reconnect will catch up
+              })
+          }
+          hasConnectedBefore = true
+        }
+      })
     return () => {
       supabase.removeChannel(channel)
     }
@@ -160,6 +207,51 @@ export default function MeetingDetail() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ลบการประชุมไม่สำเร็จ')
       setDeleting(false)
+    }
+  }
+
+  // Click-to-edit for the compact date/time · location · description strip
+  // below. Admin-only (same gate as the delete button above) — this page is
+  // deliberately NOT behind RequireAdmin (see the comment on the component),
+  // so a visitor scanning in from a shared link must never be able to edit
+  // the meeting, only whoever is logged in as admin on that browser.
+  type EditableField = 'time' | 'location' | 'description'
+  const [editingField, setEditingField] = useState<EditableField | null>(null)
+  const [timeDraft, setTimeDraft] = useState('')
+  const [locationDraft, setLocationDraft] = useState('')
+  const [descriptionDraft, setDescriptionDraft] = useState('')
+  const [savingField, setSavingField] = useState(false)
+
+  function startEditing(field: EditableField) {
+    if (!admin || !meeting) return
+    if (field === 'time') setTimeDraft(toDatetimeLocalValue(meeting.meetingTime))
+    if (field === 'location') setLocationDraft(meeting.location)
+    if (field === 'description') setDescriptionDraft(meeting.description)
+    setEditingField(field)
+  }
+
+  function cancelEditing() {
+    setEditingField(null)
+  }
+
+  async function saveField(field: EditableField) {
+    if (!id) return
+    setSavingField(true)
+    try {
+      const patch =
+        field === 'time'
+          ? { meetingTime: timeDraft ? new Date(timeDraft).toISOString() : null }
+          : field === 'location'
+            ? { location: locationDraft }
+            : { description: descriptionDraft }
+      const updated = await updateMeeting(id, patch)
+      setMeeting(updated)
+      setEditingField(null)
+      toast.success('บันทึกการแก้ไขแล้ว')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ')
+    } finally {
+      setSavingField(false)
     }
   }
 
@@ -216,34 +308,6 @@ export default function MeetingDetail() {
         )}
       </div>
 
-      <Card className="border-border/70 shadow-soft">
-        <CardContent className="grid grid-cols-1 gap-4 pt-6 sm:grid-cols-2">
-          <div className="flex items-start gap-2.5">
-            <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <div>
-              <p className="text-xs text-muted-foreground">วันและเวลา</p>
-              <p className="text-sm font-medium text-foreground">{formatMeetingTime(meeting.meetingTime)}</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2.5">
-            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <div>
-              <p className="text-xs text-muted-foreground">สถานที่</p>
-              <p className="text-sm font-medium text-foreground">{meeting.location || 'ไม่ระบุ'}</p>
-            </div>
-          </div>
-          {meeting.description && (
-            <div className="flex items-start gap-2.5 sm:col-span-2">
-              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <div>
-                <p className="text-xs text-muted-foreground">รายละเอียด</p>
-                <p className="whitespace-pre-wrap text-sm text-foreground">{meeting.description}</p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Round 42: the "เช็คอินแบบ Manual" card used to be its own full-width
           card here, below the scanner. It's now rendered smaller, inside
           MeetingScanner's side panel, directly above "เช็คอินล่าสุด" — see
@@ -258,6 +322,152 @@ export default function MeetingDetail() {
         onMatch={(p, distance) => handleCheckin(p, 'face', 1 - distance / MATCH_THRESHOLD)}
         onManualCheckin={(p) => handleCheckin(p, 'manual')}
       />
+
+      {/* Original tile layout, restored by request (the compact-strip and
+          centered-pill redesigns that came after didn't stick) — still
+          positioned below the scanner, and each field is still admin-only
+          click-to-edit, same as before. */}
+      <Card className="border-border/70 shadow-soft">
+        <CardHeader>
+          <CardTitle className="font-display text-base">รายละเอียดการประชุม</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {editingField === 'time' ? (
+              <div className="flex items-center gap-1.5 rounded-xl border border-border/70 bg-secondary/30 px-3 py-2.5">
+                <Input
+                  type="datetime-local"
+                  value={timeDraft}
+                  onChange={(e) => setTimeDraft(e.target.value)}
+                  className="h-8 text-xs"
+                  autoFocus
+                />
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => saveField('time')} disabled={savingField}>
+                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={cancelEditing} disabled={savingField}>
+                  <X className="h-3.5 w-3.5 text-muted-foreground" />
+                </Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startEditing('time')}
+                disabled={!admin}
+                className={cn(
+                  'flex items-center gap-3 rounded-xl border border-border/70 bg-secondary/30 px-4 py-3 text-left',
+                  admin && 'hover:border-primary/40 hover:bg-secondary'
+                )}
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <CalendarDays className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">วันและเวลา</p>
+                  {(() => {
+                    const { date, time } = formatMeetingDateParts(meeting.meetingTime)
+                    return (
+                      <>
+                        <p className="truncate text-sm font-semibold text-foreground">{date}</p>
+                        {time && <p className="truncate text-sm font-semibold text-foreground">{time}</p>}
+                      </>
+                    )
+                  })()}
+                </div>
+              </button>
+            )}
+
+            {editingField === 'location' ? (
+              <div className="flex items-center gap-1.5 rounded-xl border border-border/70 bg-secondary/30 px-3 py-2.5">
+                <Select value={locationDraft || undefined} onValueChange={setLocationDraft}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="เลือกห้องประชุม" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MEETING_ROOMS.map((room) => (
+                      <SelectItem key={room} value={room} className="text-xs">
+                        {room}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => saveField('location')} disabled={savingField}>
+                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={cancelEditing} disabled={savingField}>
+                  <X className="h-3.5 w-3.5 text-muted-foreground" />
+                </Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startEditing('location')}
+                disabled={!admin}
+                className={cn(
+                  'flex items-center gap-3 rounded-xl border border-border/70 bg-secondary/30 px-4 py-3 text-left',
+                  admin && 'hover:border-primary/40 hover:bg-secondary'
+                )}
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent-foreground">
+                  <MapPin className="h-5 w-5 text-accent" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">สถานที่</p>
+                  <p className="truncate text-sm font-semibold text-foreground">{meeting.location || 'ไม่ระบุ'}</p>
+                </div>
+              </button>
+            )}
+          </div>
+
+          {editingField === 'description' ? (
+            <div className="flex flex-col gap-1.5 rounded-xl border border-dashed border-border/70 bg-muted/40 p-4">
+              <Textarea
+                value={descriptionDraft}
+                onChange={(e) => setDescriptionDraft(e.target.value)}
+                rows={3}
+                placeholder="วาระการประชุม หรือรายละเอียดเพิ่มเติม"
+                className="text-sm"
+                autoFocus
+              />
+              <div className="flex items-center justify-end gap-1.5">
+                <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={cancelEditing} disabled={savingField}>
+                  ยกเลิก
+                </Button>
+                <Button size="sm" className="h-7 gap-1 px-2.5 text-xs" onClick={() => saveField('description')} disabled={savingField}>
+                  {savingField ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} บันทึก
+                </Button>
+              </div>
+            </div>
+          ) : meeting.description ? (
+            <button
+              type="button"
+              onClick={() => startEditing('description')}
+              disabled={!admin}
+              className={cn(
+                'w-full rounded-xl border border-dashed border-border/70 bg-muted/40 p-4 text-left',
+                admin && 'hover:border-primary/40 hover:bg-muted/60'
+              )}
+            >
+              <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <FileText className="h-3.5 w-3.5" /> รายละเอียด
+              </p>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{meeting.description}</p>
+            </button>
+          ) : (
+            admin && (
+              <button
+                type="button"
+                onClick={() => startEditing('description')}
+                className="w-full rounded-xl border border-dashed border-border/70 bg-muted/40 p-4 text-left text-muted-foreground/60 italic hover:border-primary/40 hover:bg-muted/60"
+              >
+                <span className="flex items-center gap-1.5 text-sm">
+                  <FileText className="h-3.5 w-3.5 shrink-0" /> เพิ่มรายละเอียด...
+                </span>
+              </button>
+            )
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="border-border/70 shadow-soft">
         <CardHeader>
@@ -625,11 +835,11 @@ function MeetingScanner({
           </div>
         </CardHeader>
         <CardContent className={cn(isFullscreen && 'flex flex-1 flex-col')}>
-          <div className={cn('flex flex-col gap-3', isFullscreen ? 'flex-1 sm:flex-row' : 'sm:flex-row')}>
+          <div className={cn('flex flex-col gap-3', isFullscreen ? 'flex-1 md:flex-row' : 'md:flex-row')}>
             <div
               className={cn(
                 'relative overflow-hidden rounded-2xl bg-slate-900',
-                isFullscreen ? 'min-h-[45vh] flex-1' : 'mx-auto aspect-video w-full max-w-xl sm:mx-0 sm:flex-1'
+                isFullscreen ? 'min-h-[45vh] flex-1' : 'mx-auto aspect-video w-full max-w-xl md:mx-0 md:flex-1'
               )}
             >
               {cameraState === 'loading' && (
@@ -639,10 +849,10 @@ function MeetingScanner({
                 </div>
               )}
               {cameraState === 'error' && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                  <AlertTriangle className="h-8 w-8 text-amber-400" />
+                <div className="flex h-full flex-col items-center justify-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
+                  <AlertTriangle className="h-8 w-8 shrink-0 text-amber-400" />
                   <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
-                  <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 gap-1.5">
+                  <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 shrink-0 gap-1.5">
                     <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
                   </Button>
                 </div>
@@ -681,7 +891,7 @@ function MeetingScanner({
             <div
               className={cn(
                 'flex shrink-0 flex-col gap-3 rounded-2xl border p-3',
-                isFullscreen ? 'w-full border-white/10 bg-slate-900 text-white sm:w-72' : 'w-full border-border/70 bg-card sm:w-64'
+                isFullscreen ? 'w-full border-white/10 bg-slate-900 text-white md:w-72' : 'w-full border-border/70 bg-card md:w-64'
               )}
             >
               {/* Round 42: "เช็คอินแบบ Manual" moved here (from its own
@@ -793,7 +1003,13 @@ function ManualMeetingCheckin({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="พิมพ์รหัสหรือชื่อ"
-          className={cn('h-8 pl-7 text-sm', isFullscreen && 'border-white/20 bg-white/5 text-white placeholder:text-white/40')}
+          className={cn(
+            // text-base (16px) below `sm` avoids iOS Safari's zoom-on-focus
+            // (see Login.tsx's manual-id input for the same reasoning);
+            // shrinks to the compact text-sm once there's room for it.
+            'h-8 pl-7 text-base sm:text-sm',
+            isFullscreen && 'border-white/20 bg-white/5 text-white placeholder:text-white/40'
+          )}
         />
       </div>
       {query.trim() && (

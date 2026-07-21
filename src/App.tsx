@@ -50,7 +50,10 @@ function AppShell() {
         aria-hidden
       />
       {!hideNavbar && <Navbar />}
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <main
+        className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8"
+        style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+      >
         <Routes>
           {/* /#/login is now the home page — a kiosk/browser opening the
               site fresh should land on the face-login scanner, not the

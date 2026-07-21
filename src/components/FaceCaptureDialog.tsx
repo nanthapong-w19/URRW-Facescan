@@ -253,8 +253,8 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
           )}
 
           {stage === 'camera-error' && (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-white/80">
-              <AlertTriangle className="h-6 w-6 text-amber-400" />
+            <div className="flex h-full flex-col items-center justify-center gap-2 overflow-y-auto p-4 text-center text-white/80">
+              <AlertTriangle className="h-6 w-6 shrink-0 text-amber-400" />
               <p className="text-xs leading-relaxed">{errorMsg}</p>
             </div>
           )}
@@ -298,8 +298,8 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
           )}
 
           {showFrameWarning && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/95 p-4 text-center">
-              <ShieldAlert className="h-6 w-6 text-amber-400" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto bg-slate-900/95 p-4 text-center">
+              <ShieldAlert className="h-6 w-6 shrink-0 text-amber-400" />
               {blackFrames && !noFrames && !trackMuted ? (
                 <p className="text-xs leading-relaxed text-white/90">
                   กล้องเชื่อมต่อและส่งภาพมาจริง แต่เนื้อหาของภาพเป็นสีดำสนิท — ไม่ใช่ปัญหาจากตัวแอปนี้

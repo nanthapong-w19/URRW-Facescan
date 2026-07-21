@@ -348,8 +348,8 @@ export default function FaceScanner() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
-        <Card className="border-border/70 shadow-soft lg:col-span-3">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-5">
+        <Card className="border-border/70 shadow-soft md:col-span-3">
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle className="font-display text-base">กล้องสแกนใบหน้า</CardTitle>
@@ -393,10 +393,10 @@ export default function FaceScanner() {
                 </div>
               )}
               {cameraState === 'error' && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                  <AlertTriangle className="h-8 w-8 text-amber-400" />
+                <div className="flex h-full flex-col items-center justify-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
+                  <AlertTriangle className="h-8 w-8 shrink-0 text-amber-400" />
                   <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
-                  <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 gap-1.5">
+                  <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 shrink-0 gap-1.5">
                     <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
                   </Button>
                 </div>
@@ -423,8 +423,8 @@ export default function FaceScanner() {
               />
 
               {showFrameWarning && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/95 p-6 text-center">
-                  <ShieldAlert className="h-8 w-8 text-amber-400" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto bg-slate-900/95 p-4 text-center sm:p-6">
+                  <ShieldAlert className="h-8 w-8 shrink-0 text-amber-400" />
                   {blackFrames && !noFrames && !trackMuted ? (
                     <p className="max-w-sm text-sm leading-relaxed text-white/90">
                       กล้องเชื่อมต่อและส่งภาพมาจริง แต่เนื้อหาของภาพเป็นสีดำสนิท — ไม่ใช่ปัญหาจากตัวแอปนี้
@@ -454,7 +454,7 @@ export default function FaceScanner() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 shadow-soft lg:col-span-2">
+        <Card className="border-border/70 shadow-soft md:col-span-2">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2 text-base">
               <KeyRound className="h-4 w-4 text-primary" /> เช็คอินแบบ Manual
@@ -484,22 +484,22 @@ export default function FaceScanner() {
                     onClick={() => handleManualCheckin(m)}
                     disabled={checkedIn}
                     className={cn(
-                      'flex w-full items-center justify-between rounded-xl border border-border/70 px-3 py-2.5 text-left transition-colors',
+                      'flex w-full items-center justify-between gap-2 rounded-xl border border-border/70 px-3 py-2.5 text-left transition-colors',
                       checkedIn ? 'cursor-not-allowed opacity-60' : 'hover:border-primary/50 hover:bg-secondary'
                     )}
                   >
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{m.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{m.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
                         {m.employeeId} · {m.department}
                       </p>
                     </div>
                     {checkedIn ? (
-                      <Badge variant="secondary" className="gap-1 font-normal">
+                      <Badge variant="secondary" className="shrink-0 gap-1 font-normal">
                         <CheckCircle2 className="h-3 w-3" /> เช็คอินแล้ว
                       </Badge>
                     ) : (
-                      <Badge className="font-normal">เช็คอิน</Badge>
+                      <Badge className="shrink-0 font-normal">เช็คอิน</Badge>
                     )}
                   </button>
                 )

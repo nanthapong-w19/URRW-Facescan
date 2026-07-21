@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Table,
@@ -30,12 +30,13 @@ import {
 } from '@/components/ui/select'
 import { UserPlus, ScanFace, Pencil, Trash2, Search, CheckCircle2, CircleDashed } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
-import { addMember, updateMember, deleteMember, registerFace } from '@/lib/store'
+import { addMember, updateMember, deleteMember, registerFace, getMemberPhotos } from '@/lib/store'
 import type { Member, MemberRole } from '@/lib/types'
 import FaceCaptureDialog from '@/components/FaceCaptureDialog'
 import { cn } from '@/lib/utils'
 
-// 8 กลุ่มสาระการเรียนรู้ ตามหลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน
+// 8 กลุ่มสาระการเรียนรู้ ตามหลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน + ฝ่ายบริหาร
+// (ไม่ใช่กลุ่มสาระตามหลักสูตร แต่เพิ่มเข้ามาเพื่อรองรับบุคลากรฝ่ายบริหาร)
 const DEPARTMENTS = [
   'ภาษาไทย',
   'คณิตศาสตร์',
@@ -45,6 +46,7 @@ const DEPARTMENTS = [
   'ศิลปะ',
   'การงานอาชีพ',
   'ภาษาต่างประเทศ',
+  'ฝ่ายบริหาร',
 ]
 
 // Fixed two-value set (unlike ตำแหน่ง/position, which is free text) — a
@@ -82,6 +84,26 @@ export default function MemberList() {
 
   const [faceDialogMember, setFaceDialogMember] = useState<Member | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Member | null>(null)
+
+  // Photos are deliberately NOT part of useAppData's shared roster (they're
+  // 60-120KB each, versus ~1KB for a face descriptor — see MEMBER_COLUMNS
+  // in store.ts) so this is the one page that actually shows them fetching
+  // its own copy, once, rather than paying that cost on every page/event.
+  const [photos, setPhotos] = useState<Record<string, string | null>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    getMemberPhotos()
+      .then((map) => {
+        if (!cancelled) setPhotos(map)
+      })
+      .catch(() => {
+        // non-critical: rows just fall back to initials if this fails
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const filtered = useMemo(() => {
     return members.filter((m) => {
@@ -147,7 +169,12 @@ export default function MemberList() {
   async function handleFaceCaptured(descriptor: number[], photo: string) {
     if (!faceDialogMember) return
     try {
-      await registerFace(faceDialogMember.id, descriptor, photo)
+      const updated = await registerFace(faceDialogMember.id, descriptor, photo)
+      // registerFace's own query still returns the full row (photo
+      // included) — patch it into the locally-fetched photos map directly
+      // instead of waiting on a refetch, since photos aren't part of the
+      // realtime-synced roster from useAppData.
+      setPhotos((prev) => ({ ...prev, [faceDialogMember.id]: updated.photo }))
       toast.success(`ลงทะเบียนใบหน้าของ ${faceDialogMember.name} สำเร็จ`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ลงทะเบียนใบหน้าไม่สำเร็จ')
@@ -225,8 +252,8 @@ export default function MemberList() {
                 <TableRow key={m.id} className="group">
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      {m.photo ? (
-                        <img src={m.photo} alt={m.name} className="h-9 w-9 rounded-full object-cover" />
+                      {photos[m.id] ? (
+                        <img src={photos[m.id]!} alt={m.name} className="h-9 w-9 rounded-full object-cover" />
                       ) : (
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary/15 to-accent/25 font-display text-sm font-semibold text-primary">
                           {m.name.charAt(0)}
@@ -276,7 +303,7 @@ export default function MemberList() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center justify-end gap-1.5 opacity-80 transition-opacity group-hover:opacity-100">
+                    <div className="flex items-center justify-end gap-2 opacity-80 transition-opacity group-hover:opacity-100">
                       <Button
                         size="sm"
                         variant="outline"

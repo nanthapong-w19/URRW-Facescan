@@ -259,10 +259,10 @@ export default function Login() {
                 </div>
               )}
               {cameraState === 'error' && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                  <AlertTriangle className="h-8 w-8 text-amber-400" />
+                <div className="flex h-full flex-col items-center justify-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
+                  <AlertTriangle className="h-8 w-8 shrink-0 text-amber-400" />
                   <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
-                  <Button size="lg" variant="secondary" onClick={() => startCamera()} className="mt-1 gap-1.5">
+                  <Button size="lg" variant="secondary" onClick={() => startCamera()} className="mt-1 shrink-0 gap-1.5">
                     <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
                   </Button>
                 </div>
