@@ -10,6 +10,7 @@ import Login from '@/pages/Login'
 import MeetingList from '@/pages/MeetingList'
 import CreateMeeting from '@/pages/CreateMeeting'
 import MeetingDetail from '@/pages/MeetingDetail'
+import MeetingSummary from '@/pages/MeetingSummary'
 import { isSupabaseConfigured } from '@/lib/supabaseClient'
 import { AdminAuthProvider } from '@/lib/adminAuth'
 
@@ -89,6 +90,10 @@ function AppShell() {
               MeetingDetail is the only part still gated, checked
               client-side via useAdminAuth(). */}
           <Route path="/meetings/:id" element={<MeetingDetail />} />
+          {/* Read-only report view — same "no login required" reasoning as
+              /meetings/:id above, since anyone with the meeting link should
+              be able to check attendance without needing admin access. */}
+          <Route path="/meetings/:id/summary" element={<MeetingSummary />} />
         </Routes>
       </main>
       <Toaster position="top-right" richColors />

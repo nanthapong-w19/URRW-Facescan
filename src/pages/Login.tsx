@@ -72,7 +72,7 @@ export default function Login() {
         if (overlay) {
           const { box, color, label } = overlay
           const mirroredX = canvas.width - box.x - box.width
-          ctx.font = '600 20px "Plus Jakarta Sans", sans-serif'
+          ctx.font = '600 20px "IBM Plex Sans Thai", "IBM Plex Sans", sans-serif'
           const textWidth = ctx.measureText(label).width
           ctx.fillStyle = color
           ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)

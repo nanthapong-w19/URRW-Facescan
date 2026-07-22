@@ -32,6 +32,7 @@ import {
   Minimize2,
   Check,
   X,
+  ClipboardList,
 } from 'lucide-react'
 import { getMeeting, deleteMeeting, getMeetingCheckins, recordMeetingCheckin, updateMeeting } from '@/lib/store'
 import { supabase } from '@/lib/supabaseClient'
@@ -312,11 +313,18 @@ export default function MeetingDetail() {
           <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">{meeting.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">สร้างโดย {meeting.createdByName || 'ไม่ทราบ'}</p>
         </div>
-        {admin && (
-          <Button variant="outline" size="sm" onClick={handleDelete} disabled={deleting} className="gap-1.5 text-destructive hover:text-destructive">
-            {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} ลบการประชุม
+        <div className="flex shrink-0 items-center gap-2">
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link to={`/meetings/${id}/summary`}>
+              <ClipboardList className="h-3.5 w-3.5" /> สรุปข้อมูลการประชุม
+            </Link>
           </Button>
-        )}
+          {admin && (
+            <Button variant="outline" size="sm" onClick={handleDelete} disabled={deleting} className="gap-1.5 text-destructive hover:text-destructive">
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} ลบการประชุม
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Round 42: the "เช็คอินแบบ Manual" card used to be its own full-width
@@ -786,7 +794,7 @@ function MeetingScanner({
         if (overlay) {
           const { box, color, label } = overlay
           const mirroredX = canvas.width - box.x - box.width
-          ctx.font = '600 20px "Plus Jakarta Sans", sans-serif'
+          ctx.font = '600 20px "IBM Plex Sans Thai", "IBM Plex Sans", sans-serif'
           const textWidth = ctx.measureText(label).width
           ctx.fillStyle = color
           ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)
