@@ -261,10 +261,15 @@ export default function MeetingDetail() {
     }
   }
 
-  async function handleCheckin(participant: MeetingParticipant, method: 'face' | 'manual', confidence?: number) {
+  async function handleCheckin(
+    participant: MeetingParticipant,
+    method: 'face' | 'manual',
+    confidence?: number,
+    photoUrl?: string
+  ) {
     if (!id || checkedInIds.has(participant.memberId)) return
     try {
-      const record = await recordMeetingCheckin(id, participant.memberId, method, confidence)
+      const record = await recordMeetingCheckin(id, participant.memberId, method, confidence, photoUrl)
       setCheckins((prev) => [...prev, record])
       toast.success(`เช็คอินสำเร็จ: ${participant.name}`, { duration: 3500 })
       playSuccessChime()
@@ -325,7 +330,7 @@ export default function MeetingDetail() {
         checkins={checkins}
         participantsById={participantsById}
         participants={meeting.participants}
-        onMatch={(p, distance) => handleCheckin(p, 'face', 1 - distance / MATCH_THRESHOLD)}
+        onMatch={(p, distance, photoUrl) => handleCheckin(p, 'face', 1 - distance / MATCH_THRESHOLD, photoUrl)}
         onManualCheckin={(p) => handleCheckin(p, 'manual')}
       />
 
@@ -583,6 +588,42 @@ function unlockOrientationCompat() {
   }
 }
 
+// Crops a small face thumbnail out of the canvas the moment a check-in is
+// confirmed, so "เช็คอินล่าสุด" can show what was actually scanned instead of
+// just a name. `box` is in the *unmirrored* video coordinates the detector
+// returns, but the canvas itself is painted mirrored (see paintLoop above),
+// so the crop's x has to be mirrored the same way the on-canvas name label
+// already is. Returns null if the box ends up outside the canvas bounds
+// (shouldn't normally happen, but a stale box from a just-lost face could
+// briefly disagree with the canvas's current size).
+function captureFaceSnapshot(
+  canvas: HTMLCanvasElement,
+  box: { x: number; y: number; width: number; height: number }
+): string | null {
+  const padX = box.width * 0.35
+  const padY = box.height * 0.35
+  const mirroredX = canvas.width - box.x - box.width
+  const sx = Math.max(0, mirroredX - padX)
+  const sy = Math.max(0, box.y - padY)
+  const sw = Math.min(canvas.width - sx, box.width + padX * 2)
+  const sh = Math.min(canvas.height - sy, box.height + padY * 2)
+  if (sw <= 0 || sh <= 0) return null
+
+  const size = 220
+  const out = document.createElement('canvas')
+  out.width = size
+  out.height = size
+  const ctx = out.getContext('2d')
+  if (!ctx) return null
+  // Cover-fit the crop into a fixed square thumbnail (source aspect ratio
+  // isn't exactly square once padding is added, so scale to fill and center).
+  const scale = Math.max(size / sw, size / sh)
+  const dw = sw * scale
+  const dh = sh * scale
+  ctx.drawImage(canvas, sx, sy, sw, sh, (size - dw) / 2, (size - dh) / 2, dw, dh)
+  return out.toDataURL('image/jpeg', 0.82)
+}
+
 function MeetingScanner({
   registeredParticipants,
   checkedInIds,
@@ -598,7 +639,7 @@ function MeetingScanner({
   checkins: MeetingCheckin[]
   participantsById: Map<string, MeetingParticipant>
   participants: MeetingParticipant[]
-  onMatch: (participant: MeetingParticipant, distance: number) => void
+  onMatch: (participant: MeetingParticipant, distance: number, photoUrl?: string) => void
   onManualCheckin: (participant: MeetingParticipant) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -641,6 +682,7 @@ function MeetingScanner({
           name: p?.name ?? 'ไม่ทราบชื่อผู้เข้าร่วม',
           department: p?.department ?? '',
           time: formatCheckinTime(c.checkedInAt),
+          photoUrl: c.photoUrl,
         }
       })
   }, [checkins, participantsById])
@@ -834,7 +876,8 @@ function MeetingScanner({
         const lastTime = lastMatchRef.current[participant.memberId] ?? 0
         if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !checkedInIds.has(participant.memberId)) {
           lastMatchRef.current[participant.memberId] = Date.now()
-          onMatch(participant, distance)
+          const snapshot = canvasRef.current ? captureFaceSnapshot(canvasRef.current, result.box) : null
+          onMatch(participant, distance, snapshot ?? undefined)
           setFeedback({ name: participant.name, department: participant.department })
           matchStreakRef.current = { memberId: null, since: 0 }
           setConfirmProgress(0)
@@ -988,7 +1031,21 @@ function MeetingScanner({
                         i === 0 && 'border-emerald-500/60'
                       )}
                     >
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                      <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full">
+                        {r.photoUrl ? (
+                          <img src={r.photoUrl} alt={r.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary to-accent text-xs font-semibold text-primary-foreground">
+                            {r.name.charAt(0)}
+                          </div>
+                        )}
+                        <CheckCircle2
+                          className={cn(
+                            'absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full text-emerald-500',
+                            isFullscreen ? 'bg-slate-900' : 'bg-card'
+                          )}
+                        />
+                      </div>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{r.name}</p>
                         <p className={cn('truncate text-xs', isFullscreen ? 'text-white/60' : 'text-muted-foreground')}>

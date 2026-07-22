@@ -159,6 +159,10 @@ export interface MeetingCheckin {
   checkedInAt: string
   method: CheckinMethod
   confidence?: number
+  // Small cropped face snapshot captured at the moment of a successful face
+  // scan (data URL, see captureFaceSnapshot in MeetingDetail.tsx) — null/
+  // undefined for manual check-ins, which never go through the camera.
+  photoUrl?: string
 }
 
 // Shape of a row in `facein_meeting_checkins`.
@@ -169,4 +173,5 @@ export interface MeetingCheckinRow {
   checked_in_at: string
   method: CheckinMethod
   confidence: number | null
+  photo_url: string | null
 }

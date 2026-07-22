@@ -384,6 +384,7 @@ export function rowToMeetingCheckin(row: MeetingCheckinRow): MeetingCheckin {
     checkedInAt: row.checked_in_at,
     method: row.method,
     confidence: row.confidence ?? undefined,
+    photoUrl: row.photo_url ?? undefined,
   }
 }
 
@@ -400,11 +401,18 @@ export async function recordMeetingCheckin(
   meetingId: string,
   memberId: string,
   method: CheckinMethod,
-  confidence?: number
+  confidence?: number,
+  photoUrl?: string
 ): Promise<MeetingCheckin> {
   const { data, error } = await supabase
     .from('facein_meeting_checkins')
-    .insert({ meeting_id: meetingId, member_id: memberId, method, confidence: confidence ?? null })
+    .insert({
+      meeting_id: meetingId,
+      member_id: memberId,
+      method,
+      confidence: confidence ?? null,
+      photo_url: photoUrl ?? null,
+    })
     .select('*')
     .single()
   if (error) throw new Error(describeDbError(error))
