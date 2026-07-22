@@ -7,51 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useAppData } from '@/hooks/useAppData'
 import { todaysCheckins } from '@/lib/store'
 import { cn } from '@/lib/utils'
-
-function AttendanceDonut({ percent }: { percent: number }) {
-  const size = 168
-  const stroke = 16
-  const r = (size - stroke) / 2
-  const circumference = 2 * Math.PI * r
-  const offset = circumference * (1 - percent / 100)
-
-  return (
-    <div className="relative flex items-center justify-center">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
-        <defs>
-          <linearGradient id="donutGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="hsl(350 62% 30%)" />
-            <stop offset="100%" stopColor="hsl(43 74% 49%)" />
-          </linearGradient>
-        </defs>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="hsl(var(--muted))"
-          strokeWidth={stroke}
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="url(#donutGradient)"
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-[stroke-dashoffset] duration-700 ease-out"
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center">
-        <span className="font-display text-3xl font-bold text-foreground">{percent}%</span>
-        <span className="text-xs text-muted-foreground">อัตราเข้าประชุม</span>
-      </div>
-    </div>
-  )
-}
+import AttendanceDonut from '@/components/AttendanceDonut'
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -165,7 +121,7 @@ export default function Dashboard() {
             <CardDescription>สัดส่วนผู้เช็คอินเทียบกับสมาชิกทั้งหมด</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4 pb-8">
-            <AttendanceDonut percent={stats.rate} />
+            <AttendanceDonut percent={stats.rate} label="อัตราเข้าประชุม" />
             <div className="flex w-full items-center justify-around border-t border-border/70 pt-4 text-center">
               <div>
                 <p className="font-display text-lg font-bold text-primary">{stats.checkedInToday}</p>

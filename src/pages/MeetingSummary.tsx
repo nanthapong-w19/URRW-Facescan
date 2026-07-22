@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -14,6 +14,8 @@ import {
   Loader2,
   CircleCheck,
   ChevronDown,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { getMeeting, getMeetingCheckins } from '@/lib/store'
 import { supabase } from '@/lib/supabaseClient'
@@ -21,6 +23,8 @@ import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
 import type { RealtimeChange } from '@/lib/realtimeSync'
 import type { Meeting, MeetingCheckin, MeetingCheckinRow } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import AttendanceDonut from '@/components/AttendanceDonut'
+import DepartmentAttendanceChart from '@/components/DepartmentAttendanceChart'
 
 function formatMeetingDate(iso: string | null) {
   if (!iso) return 'ยังไม่กำหนดเวลา'
@@ -40,7 +44,7 @@ function formatCheckinTime(iso: string) {
   }
 }
 
-type Panel = 'present' | 'absent' | null
+type Panel = 'all' | 'present' | 'absent' | null
 
 // Clickable KPI tile: the whole card toggles its detail panel below it on
 // click (rather than opening a modal) so both stats stay visible while
@@ -101,6 +105,31 @@ export default function MeetingSummary() {
   const [checkins, setCheckins] = useState<MeetingCheckin[]>([])
   const [loading, setLoading] = useState(true)
   const [openPanel, setOpenPanel] = useState<Panel>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Fullscreen just enlarges the page for projecting on a meeting-room
+  // screen — panels still hide/show per click like the windowed view.
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement === containerRef.current)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  async function toggleFullscreen() {
+    if (!containerRef.current) return
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      } else {
+        await containerRef.current.requestFullscreen()
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ไม่สามารถเปิดโหมดเต็มจอได้')
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -152,6 +181,23 @@ export default function MeetingSummary() {
     () => participants.filter((p) => !checkinByMember.has(p.memberId)),
     [participants, checkinByMember]
   )
+  const attendanceRate =
+    participants.length > 0 ? Math.round((presentParticipants.length / participants.length) * 100) : 0
+
+  // Grouped by department so the summary shows *where* the gaps are, not
+  // just the flat present/absent total the stat tiles above already cover.
+  const departmentAttendance = useMemo(() => {
+    const byDept = new Map<string, { present: number; total: number }>()
+    for (const p of participants) {
+      const entry = byDept.get(p.department) ?? { present: 0, total: 0 }
+      entry.total += 1
+      if (checkinByMember.has(p.memberId)) entry.present += 1
+      byDept.set(p.department, entry)
+    }
+    return [...byDept.entries()]
+      .map(([department, { present, total }]) => ({ department, present, absent: total - present, total }))
+      .sort((a, b) => b.total - a.total)
+  }, [participants, checkinByMember])
 
   function togglePanel(panel: Panel) {
     setOpenPanel((prev) => (prev === panel ? null : panel))
@@ -179,12 +225,31 @@ export default function MeetingSummary() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <Button asChild variant="ghost" size="sm" className="-ml-2 gap-1.5">
-        <Link to={`/meetings/${id}`}>
-          <ArrowLeft className="h-3.5 w-3.5" /> กลับไปหน้าการประชุม
-        </Link>
-      </Button>
+    <div
+      ref={containerRef}
+      className={cn(
+        'mx-auto space-y-6',
+        isFullscreen ? 'h-full max-w-none overflow-y-auto bg-background p-6 sm:p-10' : 'max-w-3xl'
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <Button asChild variant="ghost" size="sm" className="-ml-2 gap-1.5">
+          <Link to={`/meetings/${id}`}>
+            <ArrowLeft className="h-3.5 w-3.5" /> กลับไปหน้าการประชุม
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={toggleFullscreen}>
+          {isFullscreen ? (
+            <>
+              <Minimize2 className="h-3.5 w-3.5" /> ออกจากโหมดเต็มจอ
+            </>
+          ) : (
+            <>
+              <Maximize2 className="h-3.5 w-3.5" /> โหมดเต็มจอ
+            </>
+          )}
+        </Button>
+      </div>
 
       <div>
         <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">สรุปข้อมูลการประชุม</h1>
@@ -201,12 +266,38 @@ export default function MeetingSummary() {
         </div>
       </div>
 
+      {participants.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card className="border-border/70 shadow-soft lg:col-span-1">
+            <CardHeader>
+              <CardTitle className="font-display text-base">อัตราเข้าประชุม</CardTitle>
+              <CardDescription>สัดส่วนบุคลากรที่เข้าร่วมประชุม</CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center justify-center pb-8">
+              <AttendanceDonut percent={attendanceRate} label="เข้าร่วมประชุม" />
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 shadow-soft lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="font-display text-base">แยกตามกลุ่มสาระการเรียนรู้</CardTitle>
+              <CardDescription>เปรียบเทียบผู้เข้าร่วมและผู้ไม่เข้าร่วมของแต่ละกลุ่มสาระการเรียนรู้</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DepartmentAttendanceChart data={departmentAttendance} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatTile
           label="บุคลากรทั้งหมด"
           count={participants.length}
           icon={<Users className="h-5 w-5" />}
           tone="primary"
+          active={openPanel === 'all'}
+          onClick={() => togglePanel('all')}
         />
         <StatTile
           label="เข้าร่วมประชุม"
@@ -318,51 +409,53 @@ export default function MeetingSummary() {
         </Card>
       )}
 
-      <Card className="border-border/70 shadow-soft">
-        <CardHeader>
-          <CardTitle className="font-display text-base">บุคลากรทั้งหมดที่ได้รับเชิญ</CardTitle>
-          <CardDescription>รายชื่อทั้งหมด {participants.length} คน พร้อมสถานะการเช็คอิน</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {participants.length === 0 ? (
-            <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">ยังไม่มีผู้เข้าร่วมในการประชุมนี้</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {participants.map((p) => {
-                const checkin = checkinByMember.get(p.memberId)
-                return (
-                  <div
-                    key={p.memberId}
-                    className="flex items-center justify-between gap-2.5 rounded-xl border border-border/70 px-3 py-2.5"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-semibold text-primary-foreground">
-                        {p.name.charAt(0)}
+      {openPanel === 'all' && (
+        <Card className="border-border/70 shadow-soft">
+          <CardHeader>
+            <CardTitle className="font-display text-base">บุคลากรทั้งหมดที่ได้รับเชิญ</CardTitle>
+            <CardDescription>รายชื่อทั้งหมด {participants.length} คน พร้อมสถานะการเช็คอิน</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {participants.length === 0 ? (
+              <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">ยังไม่มีผู้เข้าร่วมในการประชุมนี้</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {participants.map((p) => {
+                  const checkin = checkinByMember.get(p.memberId)
+                  return (
+                    <div
+                      key={p.memberId}
+                      className="flex items-center justify-between gap-2.5 rounded-xl border border-border/70 px-3 py-2.5"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-semibold text-primary-foreground">
+                          {p.name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {p.department}
+                            {p.position ? ` · ${p.position}` : ''}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {p.department}
-                          {p.position ? ` · ${p.position}` : ''}
-                        </p>
-                      </div>
+                      {checkin ? (
+                        <Badge variant="secondary" className="shrink-0 gap-1 font-normal">
+                          <CircleCheck className="h-3 w-3" /> {formatCheckinTime(checkin.checkedInAt)}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
+                          ยังไม่เข้าร่วม
+                        </Badge>
+                      )}
                     </div>
-                    {checkin ? (
-                      <Badge variant="secondary" className="shrink-0 gap-1 font-normal">
-                        <CircleCheck className="h-3 w-3" /> {formatCheckinTime(checkin.checkedInAt)}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
-                        ยังไม่เข้าร่วม
-                      </Badge>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
