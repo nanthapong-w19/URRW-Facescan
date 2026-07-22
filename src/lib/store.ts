@@ -100,6 +100,16 @@ function describeDbError(err: unknown): string {
     message = String(err)
   }
 
+  // Checked before the generic duplicate-key branch below, since that one
+  // would otherwise misreport this specific constraint as an employee-ID
+  // clash. This backstops the client-side `checkedInIds` guard already in
+  // MeetingDetail.tsx (which prevents this in the normal UI flow) against
+  // races the client can't fully rule out — two kiosks scanning the same
+  // person at nearly the same instant, or a double-tap landing before local
+  // state has caught up with the first request.
+  if (message.includes('facein_meeting_checkins_meeting_member_unique')) {
+    return 'เช็คอินแล้ว'
+  }
   if (message.includes('duplicate key value') || message.includes('facein_members_employee_id_key')) {
     return 'รหัสพนักงานนี้มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น'
   }
