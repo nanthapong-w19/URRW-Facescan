@@ -331,7 +331,7 @@ export default function MeetingDetail() {
         participantsById={participantsById}
         participants={meeting.participants}
         onMatch={(p, distance, photoUrl) => handleCheckin(p, 'face', 1 - distance / MATCH_THRESHOLD, photoUrl)}
-        onManualCheckin={(p) => handleCheckin(p, 'manual')}
+        onManualCheckin={(p, photoUrl) => handleCheckin(p, 'manual', undefined, photoUrl)}
       />
 
       {/* Original tile layout, restored by request (the compact-strip and
@@ -624,6 +624,29 @@ function captureFaceSnapshot(
   return out.toDataURL('image/jpeg', 0.82)
 }
 
+// Manual (employee-code) check-in has no detected face box to anchor a crop
+// on — the camera may even be off, since manual is the fallback for when
+// scanning doesn't work. When it IS on, this grabs a plain center-square
+// crop of whatever's live in frame at the moment the check-in button is
+// pressed (good enough: whoever is typing their code is standing in front
+// of the camera), instead of running a second face-detection pass just for
+// a photo.
+function captureCenterSquareSnapshot(canvas: HTMLCanvasElement): string | null {
+  const side = Math.min(canvas.width, canvas.height)
+  if (side <= 0) return null
+  const sx = (canvas.width - side) / 2
+  const sy = (canvas.height - side) / 2
+
+  const size = 220
+  const out = document.createElement('canvas')
+  out.width = size
+  out.height = size
+  const ctx = out.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(canvas, sx, sy, side, side, 0, 0, size, size)
+  return out.toDataURL('image/jpeg', 0.82)
+}
+
 function MeetingScanner({
   registeredParticipants,
   checkedInIds,
@@ -640,7 +663,7 @@ function MeetingScanner({
   participantsById: Map<string, MeetingParticipant>
   participants: MeetingParticipant[]
   onMatch: (participant: MeetingParticipant, distance: number, photoUrl?: string) => void
-  onManualCheckin: (participant: MeetingParticipant) => void
+  onManualCheckin: (participant: MeetingParticipant, photoUrl?: string) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -1005,6 +1028,11 @@ function MeetingScanner({
                 checkedInIds={checkedInIds}
                 onCheckin={onManualCheckin}
                 isFullscreen={isFullscreen}
+                capturePhoto={() =>
+                  cameraState === 'ready' && canvasRef.current
+                    ? captureCenterSquareSnapshot(canvasRef.current)
+                    : null
+                }
               />
 
               <div
@@ -1087,11 +1115,17 @@ function ManualMeetingCheckin({
   checkedInIds,
   onCheckin,
   isFullscreen,
+  capturePhoto,
 }: {
   participants: MeetingParticipant[]
   checkedInIds: Set<string>
-  onCheckin: (participant: MeetingParticipant) => void
+  onCheckin: (participant: MeetingParticipant, photoUrl?: string) => void
   isFullscreen: boolean
+  // Grabs a snapshot off the live camera feed at the moment of check-in, or
+  // null if the camera isn't currently on — manual check-in is also the
+  // fallback for when the camera doesn't work at all, so this must degrade
+  // gracefully rather than require a frame that may not exist.
+  capturePhoto: () => string | null
 }) {
   const [query, setQuery] = useState('')
 
@@ -1142,7 +1176,7 @@ function ManualMeetingCheckin({
                   key={p.memberId}
                   onClick={() => {
                     if (checkedIn) return
-                    onCheckin(p)
+                    onCheckin(p, capturePhoto() ?? undefined)
                     setQuery('')
                   }}
                   disabled={checkedIn}
