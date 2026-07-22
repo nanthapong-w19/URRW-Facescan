@@ -15,6 +15,7 @@ import {
   Search,
   SwitchCamera,
   ShieldAlert,
+  Eye,
 } from 'lucide-react'
 import {
   Select,
@@ -31,6 +32,8 @@ import {
   descriptorDistance,
   distanceToConfidence,
   MATCH_THRESHOLD,
+  averageEyeAspectRatio,
+  EAR_BLINK_THRESHOLD,
 } from '@/lib/faceEngine'
 import { describeGetUserMediaError, sampleCanvasBrightness } from '@/lib/cameraHelpers'
 import type { Member } from '@/lib/types'
@@ -67,6 +70,10 @@ function playSuccessChime() {
 
 const SCAN_INTERVAL_MS = 500
 const REPEAT_COOLDOWN_MS = 15000
+// How long a detected blink keeps the tracked face "live" for. Wide enough
+// to bridge a couple of scan ticks around the blink itself, short enough
+// that holding up a static photo can't coast on a single lucky detection.
+const LIVENESS_VALID_MS = 4000
 
 export default function FaceScanner() {
   const { members, checkins } = useAppData()
@@ -81,6 +88,10 @@ export default function FaceScanner() {
   const overlayRef = useRef<OverlayBox>(null)
   const framesPaintedRef = useRef(0)
   const brightnessSamplesRef = useRef<number[]>([])
+  const livenessRef = useRef<{ eyesClosed: boolean; blinkAt: number | null }>({
+    eyesClosed: false,
+    blinkAt: null,
+  })
 
   const [cameraState, setCameraState] = useState<CameraState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -91,6 +102,7 @@ export default function FaceScanner() {
   const [trackMuted, setTrackMuted] = useState(false)
   const [noFrames, setNoFrames] = useState(false)
   const [blackFrames, setBlackFrames] = useState(false)
+  const [waitingForBlink, setWaitingForBlink] = useState(false)
 
   // Refreshes the labeled device list — labels are only populated once
   // permission has been granted at least once, so this is called again
@@ -267,6 +279,8 @@ export default function FaceScanner() {
       }
       if (!result) {
         overlayRef.current = null
+        livenessRef.current = { eyesClosed: false, blinkAt: null }
+        setWaitingForBlink(false)
         return
       }
 
@@ -277,14 +291,29 @@ export default function FaceScanner() {
         if (!best || distance < best.distance) best = { member: m, distance }
       }
 
+      // Lightweight liveness check: track eye-aspect-ratio across ticks and
+      // require one real blink (closed -> open transition) before trusting
+      // a match enough to check someone in. A static photo or frozen video
+      // frame held up to the camera will never produce that transition.
+      const liveness = livenessRef.current
+      const ear = averageEyeAspectRatio(result.landmarks)
+      if (ear < EAR_BLINK_THRESHOLD) {
+        liveness.eyesClosed = true
+      } else if (liveness.eyesClosed) {
+        liveness.eyesClosed = false
+        liveness.blinkAt = Date.now()
+      }
+      const isLive = liveness.blinkAt !== null && Date.now() - liveness.blinkAt < LIVENESS_VALID_MS
+
       const isMatch = best && best.distance < MATCH_THRESHOLD
       overlayRef.current = {
         box: result.box,
-        color: isMatch ? '#10b981' : '#f59e0b',
-        label: isMatch ? best!.member.name : 'ไม่พบในระบบ',
+        color: isMatch ? (isLive ? '#10b981' : '#3b82f6') : '#f59e0b',
+        label: isMatch ? (isLive ? best!.member.name : `${best!.member.name} · กระพริบตา`) : 'ไม่พบในระบบ',
       }
+      setWaitingForBlink(Boolean(isMatch) && !isLive)
 
-      if (isMatch) {
+      if (isMatch && isLive) {
         const member = best!.member
         const lastTime = lastCheckinRef.current[member.id] ?? 0
         const alreadyToday = hasCheckedInToday(checkins, member.id)
@@ -442,6 +471,12 @@ export default function FaceScanner() {
                 </div>
               )}
 
+              {waitingForBlink && !feedback && cameraState === 'ready' && (
+                <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-blue-600/90 px-4 py-2 text-center text-sm font-medium text-white backdrop-blur-sm">
+                  <Eye className="h-4 w-4 shrink-0" /> กระพริบตาเพื่อยืนยันว่าเป็นคนจริง ก่อนเช็คอิน
+                </div>
+              )}
+
               {feedback?.kind === 'success' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-emerald-600/90 text-white backdrop-blur-sm animate-in fade-in zoom-in-95">
                   <CheckCircle2 className="h-14 w-14" />
@@ -513,6 +548,7 @@ export default function FaceScanner() {
               <ul className="mt-1.5 list-inside list-disc space-y-0.5">
                 <li>ให้แสงส่องหน้าอย่างเพียงพอ หลีกเลี่ยงแสงย้อน</li>
                 <li>มองตรงเข้ากล้องและอยู่ห่างประมาณ 40-60 ซม.</li>
+                <li>เมื่อระบบพบใบหน้าที่ตรงกัน จะขอให้กระพริบตา 1 ครั้งเพื่อยืนยันว่าเป็นคนจริง (ป้องกันรูปถ่าย/วิดีโอปลอม)</li>
                 <li>สมาชิกต้องลงทะเบียนใบหน้าในหน้า &quot;จัดการบุคลากร&quot; ก่อน</li>
                 <li>
                   ถ้าภาพจากกล้องยังคงมืดสนิท ลองเลือกกล้องอื่นจากเมนู &quot;เลือกกล้อง&quot; ด้านบนวิดีโอ

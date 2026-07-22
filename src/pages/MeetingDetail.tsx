@@ -111,6 +111,12 @@ type ScanFeedback = { name: string; department: string } | null
 
 const SCAN_INTERVAL_MS = 500
 const REPEAT_COOLDOWN_MS = 15000
+// The same person must match continuously for this long before a check-in
+// is actually recorded — protects against a single fleeting frame (motion
+// blur, someone briefly walking past, a photo held up for an instant)
+// triggering a check-in immediately. ~1.5s of holding steady in front of
+// the camera, same idea as a tap-and-hold button.
+const CONFIRM_HOLD_MS = 1500
 
 // This page doubles as the meeting's public check-in kiosk — anyone with
 // the link can open it and scan in, no admin login required (see App.tsx:
@@ -603,10 +609,12 @@ function MeetingScanner({
   const paintRafRef = useRef<number | null>(null)
   const lastMatchRef = useRef<Record<string, number>>({})
   const overlayRef = useRef<{ box: { x: number; y: number; width: number; height: number }; color: string; label: string } | null>(null)
+  const matchStreakRef = useRef<{ memberId: string | null; since: number }>({ memberId: null, since: 0 })
 
   const [cameraState, setCameraState] = useState<CameraState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [feedback, setFeedback] = useState<ScanFeedback>(null)
+  const [confirmProgress, setConfirmProgress] = useState(0)
   // Two independent flags feed the single `isFullscreen` flag the rest of
   // this component renders against: `nativeFullscreen` mirrors the browser's
   // real Fullscreen API state, while `manualFullscreen` is a CSS-only
@@ -781,6 +789,8 @@ function MeetingScanner({
       }
       if (!result) {
         overlayRef.current = null
+        matchStreakRef.current = { memberId: null, since: 0 }
+        setConfirmProgress(0)
         return
       }
 
@@ -792,19 +802,42 @@ function MeetingScanner({
       }
 
       const isMatch = best && best.distance < MATCH_THRESHOLD
+
+      // Track how long the SAME participant has matched continuously.
+      // Switching to no-match, a different person, or losing the face
+      // entirely resets the streak — only sustained agreement counts.
+      const streak = matchStreakRef.current
+      if (isMatch) {
+        const memberId = best!.participant.memberId
+        if (streak.memberId !== memberId) {
+          matchStreakRef.current = { memberId, since: Date.now() }
+        }
+      } else {
+        matchStreakRef.current = { memberId: null, since: 0 }
+      }
+      const heldMs = matchStreakRef.current.memberId ? Date.now() - matchStreakRef.current.since : 0
+      const isConfirmed = Boolean(isMatch) && heldMs >= CONFIRM_HOLD_MS
+      setConfirmProgress(isMatch ? Math.min(1, heldMs / CONFIRM_HOLD_MS) : 0)
+
       overlayRef.current = {
         box: result.box,
-        color: isMatch ? '#10b981' : '#f59e0b',
-        label: isMatch ? best!.participant.name : 'ไม่ใช่ผู้เข้าร่วมประชุม',
+        color: isMatch ? (isConfirmed ? '#10b981' : '#3b82f6') : '#f59e0b',
+        label: isMatch
+          ? isConfirmed
+            ? best!.participant.name
+            : `${best!.participant.name} · กำลังยืนยัน`
+          : 'ไม่ใช่ผู้เข้าร่วมประชุม',
       }
 
-      if (isMatch) {
+      if (isConfirmed) {
         const { participant, distance } = best!
         const lastTime = lastMatchRef.current[participant.memberId] ?? 0
         if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !checkedInIds.has(participant.memberId)) {
           lastMatchRef.current[participant.memberId] = Date.now()
           onMatch(participant, distance)
           setFeedback({ name: participant.name, department: participant.department })
+          matchStreakRef.current = { memberId: null, since: 0 }
+          setConfirmProgress(0)
           window.setTimeout(() => setFeedback(null), 3200)
         }
       }
@@ -888,6 +921,18 @@ function MeetingScanner({
                 ref={canvasRef}
                 className={cn('h-full w-full object-cover', cameraState !== 'ready' && 'hidden')}
               />
+              {confirmProgress > 0 && confirmProgress < 1 && !feedback && (
+                <div className="absolute inset-x-0 bottom-0 bg-blue-600/90 px-4 py-2 text-center text-sm font-medium text-white backdrop-blur-sm">
+                  <p className="mb-1.5">ตรวจพบใบหน้าตรงกัน กรุณาอยู่นิ่งๆ เพื่อยืนยัน...</p>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/30">
+                    <div
+                      className="h-full rounded-full bg-white transition-[width] duration-150"
+                      style={{ width: `${confirmProgress * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {feedback && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-emerald-600/90 text-white backdrop-blur-sm animate-in fade-in zoom-in-95">
                   <CheckCircle2 className="h-14 w-14" />
