@@ -35,3 +35,8 @@ Clean out entries 3+ months old periodically.
 - **Status**: Completed
 - **Description**: Scaffolded 5 reusable components in `src/components/ui/` and wired them into the pages that had hand-rolled duplicates (MemberList, MeetingDetail, MeetingSummary, MeetingList, Dashboard, FaceScanner, CreateMeeting). Also added an `isLoading`/`icon` prop pair to the base `Button` component, replacing 3 manual spinner-vs-icon ternaries.
 - **Notes**: Fixed a real gap along the way — MeetingDetail's delete button had no confirmation dialog at all (see [[bugs.md]]).
+
+### 2026-07-23 - UI-005: Extract InitialsAvatar (photo-or-initials circle)
+- **Status**: Completed
+- **Description**: Found the photo-with-initials-fallback avatar block hand-rolled 8x across MemberList, Dashboard, MeetingDetail (x2), MeetingSummary (x4) with 3 slightly different color variants. Extracted `src/components/ui/initials-avatar.tsx` (`variant`: solid/soft/muted, optional `children` slot for badge overlays) and wired all 8 spots.
+- **Notes**: Normalized one inconsistent detail while at it — 2 spots used `text-xs` instead of the other 6's `text-sm` for the initial letter; now all `text-sm` via the shared component.

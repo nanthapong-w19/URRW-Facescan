@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
   Table,
@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { PageHeader } from '@/components/ui/page-header'
+import { InitialsAvatar } from '@/components/ui/initials-avatar'
 import {
   Select,
   SelectContent,
@@ -30,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { UserPlus, ScanFace, Pencil, Trash2, Search, CheckCircle2, CircleDashed, Eye, EyeOff } from 'lucide-react'
+import { UserPlus, ScanFace, Pencil, Trash2, Search, CheckCircle2, CircleDashed, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { addMember, updateMember, deleteMember, registerFace, getMemberPhotos } from '@/lib/store'
 import type { Member, MemberRole } from '@/lib/types'
@@ -52,14 +53,39 @@ const DEPARTMENTS = [
   'บุคลากรทางการศึกษา',
 ]
 
-// Fixed value set (unlike ตำแหน่ง/position, which is free text) — a
-// dropdown makes sense here since there are exactly these fixed roles.
+const POSITIONS = [
+  'ผู้อำนวยการโรงเรียน',
+  'รองผู้อำนวยการโรงเรียน',
+  'ครู',
+  'ครูอัตราจ้าง',
+  'เจ้าหน้าที่สำนักงาน',
+]
+
+// Fixed value set — a dropdown makes sense here since there are exactly
+// these fixed roles.
 const ROLE_LABELS: Record<MemberRole, string> = {
   admin: 'ผู้ดูแลระบบ',
   user: 'ผู้ใช้งานทั่วไป',
   viewer: 'ผู้แสดงผล',
 }
 const ROLES: MemberRole[] = ['user', 'admin', 'viewer']
+
+type SortKey = 'name' | 'department' | 'position' | 'role' | 'faceStatus'
+
+function sortValue(m: Member, key: SortKey): string {
+  switch (key) {
+    case 'name':
+      return m.name
+    case 'department':
+      return m.department
+    case 'position':
+      return m.position || ''
+    case 'role':
+      return ROLE_LABELS[m.role]
+    case 'faceStatus':
+      return m.faceStatus === 'registered' ? 'ลงทะเบียนแล้ว' : 'ยังไม่ลงทะเบียน'
+  }
+}
 
 interface MemberFormState {
   employeeId: string
@@ -73,8 +99,36 @@ const emptyForm: MemberFormState = {
   employeeId: '',
   name: '',
   department: DEPARTMENTS[0],
-  position: '',
+  position: POSITIONS[0],
   role: 'user',
+}
+
+interface SortableTableHeadProps {
+  sortKey: SortKey
+  activeKey: SortKey | null
+  dir: 'asc' | 'desc'
+  onSort: (key: SortKey) => void
+  children: ReactNode
+}
+
+function SortableTableHead({ sortKey: key, activeKey, dir, onSort, children }: SortableTableHeadProps) {
+  const active = activeKey === key
+  return (
+    <TableHead>
+      <button
+        type="button"
+        onClick={() => onSort(key)}
+        className="flex items-center gap-1 hover:text-foreground"
+      >
+        {children}
+        {active ? (
+          dir === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />
+        )}
+      </button>
+    </TableHead>
+  )
 }
 
 export default function MemberList() {
@@ -82,6 +136,8 @@ export default function MemberList() {
   const [query, setQuery] = useState('')
   const [deptFilter, setDeptFilter] = useState<string>('all')
   const [showAdminViewer, setShowAdminViewer] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const [formOpen, setFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -111,7 +167,7 @@ export default function MemberList() {
   }, [])
 
   const filtered = useMemo(() => {
-    return members.filter((m) => {
+    const result = members.filter((m) => {
       const matchesQuery =
         !query ||
         m.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -120,7 +176,21 @@ export default function MemberList() {
       const matchesRole = showAdminViewer || (m.role !== 'admin' && m.role !== 'viewer')
       return matchesQuery && matchesDept && matchesRole
     })
-  }, [members, query, deptFilter, showAdminViewer])
+    if (sortKey) {
+      const dir = sortDir === 'asc' ? 1 : -1
+      result.sort((a, b) => sortValue(a, sortKey).localeCompare(sortValue(b, sortKey), 'th') * dir)
+    }
+    return result
+  }, [members, query, deptFilter, showAdminViewer, sortKey, sortDir])
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
 
   function openAddForm() {
     setEditingId(null)
@@ -245,11 +315,21 @@ export default function MemberList() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>บุคลากร</TableHead>
-                <TableHead>กลุ่มสาระการเรียนรู้</TableHead>
-                <TableHead>ตำแหน่ง</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>สถานะใบหน้า</TableHead>
+                <SortableTableHead sortKey="name" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
+                  บุคลากร
+                </SortableTableHead>
+                <SortableTableHead sortKey="department" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
+                  กลุ่มสาระการเรียนรู้
+                </SortableTableHead>
+                <SortableTableHead sortKey="position" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
+                  ตำแหน่ง
+                </SortableTableHead>
+                <SortableTableHead sortKey="role" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
+                  Role
+                </SortableTableHead>
+                <SortableTableHead sortKey="faceStatus" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
+                  สถานะใบหน้า
+                </SortableTableHead>
                 <TableHead className="text-right">การจัดการ</TableHead>
               </TableRow>
             </TableHeader>
@@ -265,13 +345,7 @@ export default function MemberList() {
                 <TableRow key={m.id} className="group">
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      {photos[m.id] ? (
-                        <img src={photos[m.id]!} alt={m.name} className="h-9 w-9 rounded-full object-cover" />
-                      ) : (
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary/15 to-accent/25 font-display text-sm font-semibold text-primary">
-                          {m.name.charAt(0)}
-                        </div>
-                      )}
+                      <InitialsAvatar name={m.name} photo={photos[m.id]} variant="soft" />
                       <div>
                         <p className="text-sm font-medium text-foreground">{m.name}</p>
                         <p className="text-xs text-muted-foreground">{m.employeeId}</p>
@@ -390,13 +464,19 @@ export default function MemberList() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="position">ตำแหน่ง</Label>
-              <Input
-                id="position"
-                value={form.position}
-                onChange={(e) => setForm({ ...form, position: e.target.value })}
-                placeholder="เช่น ครู, ครูอัตราจ้าง, ผู้อำนวยการ"
-              />
+              <Label>ตำแหน่ง</Label>
+              <Select value={form.position} onValueChange={(v) => setForm({ ...form, position: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {POSITIONS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Role</Label>

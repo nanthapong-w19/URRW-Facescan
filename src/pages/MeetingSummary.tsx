@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { LoadingState } from '@/components/ui/loading-state'
+import { InitialsAvatar } from '@/components/ui/initials-avatar'
 import {
   ArrowLeft,
   CalendarDays,
@@ -312,20 +313,11 @@ export default function MeetingSummary() {
               {recentCheckins.map((c, i) => (
                 <li key={c.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                   <div className="flex min-w-0 items-center gap-2.5">
-                    <div
-                      className={cn(
-                        'relative h-9 w-9 shrink-0 overflow-hidden rounded-full',
-                        i === 0 && 'ring-2 ring-emerald-500/60'
-                      )}
-                    >
-                      {c.photoUrl ? (
-                        <img src={c.photoUrl} alt={c.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary to-accent text-xs font-semibold text-primary-foreground">
-                          {c.name.charAt(0)}
-                        </div>
-                      )}
-                    </div>
+                    <InitialsAvatar
+                      name={c.name}
+                      photo={c.photoUrl}
+                      className={cn(i === 0 && 'ring-2 ring-emerald-500/60')}
+                    />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
                       <p className="truncate text-xs text-muted-foreground">{c.department}</p>
@@ -424,15 +416,7 @@ export default function MeetingSummary() {
                     return (
                       <li key={p.memberId} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                         <div className="flex min-w-0 items-center gap-3">
-                          <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full">
-                            {checkin.photoUrl ? (
-                              <img src={checkin.photoUrl} alt={p.name} className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary to-accent text-sm font-semibold text-primary-foreground">
-                                {p.name.charAt(0)}
-                              </div>
-                            )}
-                          </div>
+                          <InitialsAvatar name={p.name} photo={checkin.photoUrl} />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                             <p className="truncate text-xs text-muted-foreground">
@@ -476,9 +460,7 @@ export default function MeetingSummary() {
               <ul className="divide-y divide-border/70">
                 {absentParticipants.map((p) => (
                   <li key={p.memberId} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
-                      {p.name.charAt(0)}
-                    </div>
+                    <InitialsAvatar name={p.name} variant="muted" />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
@@ -513,9 +495,7 @@ export default function MeetingSummary() {
                       className="flex items-center justify-between gap-2.5 rounded-xl border border-border/70 px-3 py-2.5"
                     >
                       <div className="flex min-w-0 items-center gap-2.5">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-semibold text-primary-foreground">
-                          {p.name.charAt(0)}
-                        </div>
+                        <InitialsAvatar name={p.name} />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                           <p className="truncate text-xs text-muted-foreground">

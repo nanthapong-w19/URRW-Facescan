@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
+import { InitialsAvatar } from '@/components/ui/initials-avatar'
 import { useAppData } from '@/hooks/useAppData'
 import { todaysCheckins } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -161,9 +162,7 @@ export default function Dashboard() {
                 {recent.map((c) => (
                   <li key={c.id} className="flex items-center justify-between gap-2 py-3 first:pt-0 last:pb-0 sm:gap-3">
                     <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/15 to-accent/25 font-display text-sm font-semibold text-primary">
-                        {c.name.charAt(0)}
-                      </div>
+                      <InitialsAvatar name={c.name} variant="soft" />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
                         <p className="truncate text-xs text-muted-foreground">{c.department}</p>

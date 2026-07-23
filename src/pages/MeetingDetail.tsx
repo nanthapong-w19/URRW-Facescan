@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { LoadingState } from '@/components/ui/loading-state'
+import { InitialsAvatar } from '@/components/ui/initials-avatar'
 import {
   Select,
   SelectContent,
@@ -536,9 +537,7 @@ export default function MeetingDetail() {
                 return (
                   <div key={p.memberId} className="flex items-center justify-between gap-2.5 rounded-xl border border-border/70 px-3 py-2.5">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-semibold text-primary-foreground">
-                        {p.name.charAt(0)}
-                      </div>
+                      <InitialsAvatar name={p.name} />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                         <p className="truncate text-xs text-muted-foreground">
@@ -1113,21 +1112,14 @@ function MeetingScanner({
                         i === 0 && 'border-emerald-500/60'
                       )}
                     >
-                      <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full">
-                        {r.photoUrl ? (
-                          <img src={r.photoUrl} alt={r.name} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary to-accent text-xs font-semibold text-primary-foreground">
-                            {r.name.charAt(0)}
-                          </div>
-                        )}
+                      <InitialsAvatar name={r.name} photo={r.photoUrl}>
                         <CheckCircle2
                           className={cn(
                             'absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full text-emerald-500',
                             isFullscreen ? 'bg-white' : 'bg-card'
                           )}
                         />
-                      </div>
+                      </InitialsAvatar>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{r.name}</p>
                         <p className={cn('truncate text-xs', isFullscreen ? 'text-slate-500' : 'text-muted-foreground')}>
