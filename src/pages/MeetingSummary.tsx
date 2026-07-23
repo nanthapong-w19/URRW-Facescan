@@ -4,6 +4,8 @@ import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/ui/empty-state'
+import { LoadingState } from '@/components/ui/loading-state'
 import {
   ArrowLeft,
   CalendarDays,
@@ -11,7 +13,6 @@ import {
   Users,
   UserCheck,
   UserX,
-  Loader2,
   CircleCheck,
   ChevronDown,
   Maximize2,
@@ -227,23 +228,18 @@ export default function MeetingSummary() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/70 bg-card p-10 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> กำลังโหลดข้อมูลสรุป...
-      </div>
-    )
+    return <LoadingState label="กำลังโหลดข้อมูลสรุป..." />
   }
 
   if (!meeting) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/70 bg-card p-10 text-center">
-        <p className="text-sm text-muted-foreground">ไม่พบการประชุมนี้ อาจถูกลบไปแล้ว</p>
+      <EmptyState title="ไม่พบการประชุมนี้ อาจถูกลบไปแล้ว">
         <Button asChild size="sm" variant="outline">
           <Link to="/meetings">
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> กลับไปหน้ารายการประชุม
+            <ArrowLeft className="me-1.5 h-3.5 w-3.5" /> กลับไปหน้ารายการประชุม
           </Link>
         </Button>
-      </div>
+      </EmptyState>
     )
   }
 
@@ -256,7 +252,7 @@ export default function MeetingSummary() {
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <Button asChild variant="ghost" size="sm" className="-ml-2 gap-1.5">
+        <Button asChild variant="ghost" size="sm" className="-ms-2 gap-1.5">
           <Link to={`/meetings/${id}`}>
             <ArrowLeft className="h-3.5 w-3.5" /> กลับไปหน้าการประชุม
           </Link>

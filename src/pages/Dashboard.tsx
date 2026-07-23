@@ -4,6 +4,7 @@ import { Users, UserCheck, TrendingUp, Clock, ScanFace, ArrowUpRight, CircleChec
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/ui/page-header'
 import { useAppData } from '@/hooks/useAppData'
 import { todaysCheckins } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -39,22 +40,18 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">
-            ภาพรวมระบบ
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            สรุปสถานะการเช็คอินและสมาชิกทั้งหมดแบบเรียลไทม์
-          </p>
-        </div>
-        <Button asChild className="gap-1.5 shadow-soft">
-          <Link to="/scan">
-            <ScanFace className="h-4 w-4" />
-            ไปที่หน้าสแกนเช็คอิน
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="ภาพรวมระบบ"
+        description="สรุปสถานะการเช็คอินและสมาชิกทั้งหมดแบบเรียลไทม์"
+        action={
+          <Button asChild className="gap-1.5 shadow-soft">
+            <Link to="/scan">
+              <ScanFace className="h-4 w-4" />
+              ไปที่หน้าสแกนเช็คอิน
+            </Link>
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border/70 shadow-soft transition-transform hover:-translate-y-0.5">

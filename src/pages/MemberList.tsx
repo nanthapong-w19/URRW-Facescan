@@ -21,6 +21,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { PageHeader } from '@/components/ui/page-header'
 import {
   Select,
   SelectContent,
@@ -28,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { UserPlus, ScanFace, Pencil, Trash2, Search, CheckCircle2, CircleDashed } from 'lucide-react'
+import { UserPlus, ScanFace, Pencil, Trash2, Search, CheckCircle2, CircleDashed, Eye, EyeOff } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { addMember, updateMember, deleteMember, registerFace, getMemberPhotos } from '@/lib/store'
 import type { Member, MemberRole } from '@/lib/types'
@@ -47,6 +49,7 @@ const DEPARTMENTS = [
   'การงานอาชีพ',
   'ภาษาต่างประเทศ',
   'ฝ่ายบริหาร',
+  'บุคลากรทางการศึกษา',
 ]
 
 // Fixed value set (unlike ตำแหน่ง/position, which is free text) — a
@@ -78,6 +81,7 @@ export default function MemberList() {
   const { members } = useAppData()
   const [query, setQuery] = useState('')
   const [deptFilter, setDeptFilter] = useState<string>('all')
+  const [showAdminViewer, setShowAdminViewer] = useState(false)
 
   const [formOpen, setFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -113,9 +117,10 @@ export default function MemberList() {
         m.name.toLowerCase().includes(query.toLowerCase()) ||
         m.employeeId.toLowerCase().includes(query.toLowerCase())
       const matchesDept = deptFilter === 'all' || m.department === deptFilter
-      return matchesQuery && matchesDept
+      const matchesRole = showAdminViewer || (m.role !== 'admin' && m.role !== 'viewer')
+      return matchesQuery && matchesDept && matchesRole
     })
-  }, [members, query, deptFilter])
+  }, [members, query, deptFilter, showAdminViewer])
 
   function openAddForm() {
     setEditingId(null)
@@ -184,17 +189,15 @@ export default function MemberList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">
-            จัดการบุคลากร
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">เพิ่ม แก้ไข และลงทะเบียนใบหน้าให้บุคลากรในระบบ</p>
-        </div>
-        <Button onClick={openAddForm} className="gap-1.5 shadow-soft">
-          <UserPlus className="h-4 w-4" /> เพิ่มบุคลากรใหม่
-        </Button>
-      </div>
+      <PageHeader
+        title="จัดการบุคลากร"
+        description="เพิ่ม แก้ไข และลงทะเบียนใบหน้าให้บุคลากรในระบบ"
+        action={
+          <Button onClick={openAddForm} className="gap-1.5 shadow-soft">
+            <UserPlus className="h-4 w-4" /> เพิ่มบุคลากรใหม่
+          </Button>
+        }
+      />
 
       <Card className="border-border/70 shadow-soft">
         <CardHeader className="gap-3">
@@ -205,12 +208,12 @@ export default function MemberList() {
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Search className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="ค้นหาชื่อ, รหัสพนักงาน"
-                  className="w-full pl-8 sm:w-64"
+                  className="w-full ps-8 sm:w-64"
                 />
               </div>
               <Select value={deptFilter} onValueChange={setDeptFilter}>
@@ -226,6 +229,15 @@ export default function MemberList() {
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => setShowAdminViewer((v) => !v)}
+              >
+                {showAdminViewer ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showAdminViewer ? 'ซ่อนผู้ดูแลระบบ/ผู้แสดงผล' : 'แสดงผู้ดูแลระบบ/ผู้แสดงผล'}
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -306,7 +318,7 @@ export default function MemberList() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center justify-end gap-2 opacity-80 transition-opacity group-hover:opacity-100">
+                    <div className="flex items-center justify-end gap-2 opacity-80 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                       <Button
                         size="sm"
                         variant="outline"
@@ -415,24 +427,19 @@ export default function MemberList() {
       </Dialog>
 
       {/* Delete confirmation */}
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-display">ยืนยันการลบบุคลากร</DialogTitle>
-            <DialogDescription>
-              คุณต้องการลบ <strong>{deleteTarget?.name}</strong> ออกจากระบบใช่หรือไม่? การลบข้อมูลนี้ไม่สามารถย้อนกลับได้
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              ยกเลิก
-            </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete} className="gap-1.5">
-              <Trash2 className="h-4 w-4" /> ลบบุคลากร
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="ยืนยันการลบบุคลากร"
+        description={
+          <>
+            คุณต้องการลบ <strong>{deleteTarget?.name}</strong> ออกจากระบบใช่หรือไม่? การลบข้อมูลนี้ไม่สามารถย้อนกลับได้
+          </>
+        }
+        confirmLabel="ลบบุคลากร"
+        confirmIcon={<Trash2 className="h-4 w-4" />}
+        onConfirm={handleConfirmDelete}
+      />
 
       {/* Face registration */}
       {faceDialogMember && (

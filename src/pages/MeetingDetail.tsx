@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/ui/empty-state'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { LoadingState } from '@/components/ui/loading-state'
 import {
   Select,
   SelectContent,
@@ -134,6 +137,7 @@ export default function MeetingDetail() {
   const [checkins, setCheckins] = useState<MeetingCheckin[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
   const checkedInIds = useMemo(() => new Set(checkins.map((c) => c.memberId)), [checkins])
   const registeredParticipants = useMemo(
@@ -215,6 +219,7 @@ export default function MeetingDetail() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ลบการประชุมไม่สำเร็จ')
       setDeleting(false)
+      setDeleteConfirmOpen(false)
     }
   }
 
@@ -281,29 +286,24 @@ export default function MeetingDetail() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/70 bg-card p-10 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> กำลังโหลดข้อมูลการประชุม...
-      </div>
-    )
+    return <LoadingState label="กำลังโหลดข้อมูลการประชุม..." />
   }
 
   if (!meeting) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/70 bg-card p-10 text-center">
-        <p className="text-sm text-muted-foreground">ไม่พบการประชุมนี้ อาจถูกลบไปแล้ว</p>
+      <EmptyState title="ไม่พบการประชุมนี้ อาจถูกลบไปแล้ว">
         <Button asChild size="sm" variant="outline">
           <Link to="/meetings">
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> กลับไปหน้ารายการประชุม
+            <ArrowLeft className="me-1.5 h-3.5 w-3.5" /> กลับไปหน้ารายการประชุม
           </Link>
         </Button>
-      </div>
+      </EmptyState>
     )
   }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <Button asChild variant="ghost" size="sm" className="gap-1.5 -ml-2">
+      <Button asChild variant="ghost" size="sm" className="gap-1.5 -ms-2">
         <Link to="/meetings">
           <ArrowLeft className="h-3.5 w-3.5" /> รายการประชุม
         </Link>
@@ -321,12 +321,34 @@ export default function MeetingDetail() {
             </Link>
           </Button>
           {isAdmin && (
-            <Button variant="outline" size="sm" onClick={handleDelete} disabled={deleting} className="gap-1.5 text-destructive hover:text-destructive">
-              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} ลบการประชุม
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteConfirmOpen(true)}
+              isLoading={deleting}
+              icon={<Trash2 className="h-3.5 w-3.5" />}
+              className="gap-1.5 text-destructive hover:text-destructive"
+            >
+              ลบการประชุม
             </Button>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="ยืนยันการลบการประชุม"
+        description={
+          <>
+            คุณต้องการลบ <strong>{meeting.title}</strong> ใช่หรือไม่? การลบข้อมูลนี้ไม่สามารถย้อนกลับได้
+          </>
+        }
+        confirmLabel="ลบการประชุม"
+        confirmIcon={<Trash2 className="h-3.5 w-3.5" />}
+        loading={deleting}
+        onConfirm={handleDelete}
+      />
 
       {/* Round 42: the "เช็คอินแบบ Manual" card used to be its own full-width
           card here, below the scanner. It's now rendered smaller, inside
@@ -453,8 +475,14 @@ export default function MeetingDetail() {
                 <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={cancelEditing} disabled={savingField}>
                   ยกเลิก
                 </Button>
-                <Button size="sm" className="h-7 gap-1 px-2.5 text-xs" onClick={() => saveField('description')} disabled={savingField}>
-                  {savingField ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} บันทึก
+                <Button
+                  size="sm"
+                  className="h-7 gap-1 px-2.5 text-xs"
+                  onClick={() => saveField('description')}
+                  isLoading={savingField}
+                  icon={<Check className="h-3.5 w-3.5" />}
+                >
+                  บันทึก
                 </Button>
               </div>
             </div>
@@ -1095,7 +1123,7 @@ function MeetingScanner({
                         )}
                         <CheckCircle2
                           className={cn(
-                            'absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full text-emerald-500',
+                            'absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full text-emerald-500',
                             isFullscreen ? 'bg-white' : 'bg-card'
                           )}
                         />
@@ -1171,7 +1199,7 @@ function ManualMeetingCheckin({
       <div className="relative">
         <Search
           className={cn(
-            'pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2',
+            'pointer-events-none absolute start-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2',
             isFullscreen ? 'text-slate-400' : 'text-muted-foreground'
           )}
         />
@@ -1183,7 +1211,7 @@ function ManualMeetingCheckin({
             // text-base (16px) below `sm` avoids iOS Safari's zoom-on-focus
             // (see Login.tsx's manual-id input for the same reasoning);
             // shrinks to the compact text-sm once there's room for it.
-            'h-8 pl-7 text-base sm:text-sm',
+            'h-8 ps-7 text-base sm:text-sm',
             isFullscreen && 'border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400'
           )}
         />

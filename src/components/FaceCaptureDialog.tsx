@@ -231,7 +231,7 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
         {stage === 'scanning' && devices.length > 1 && (
           <Select value={activeDeviceId} onValueChange={(id) => startCamera(id)}>
             <SelectTrigger className="h-8 text-xs">
-              <SwitchCamera className="mr-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <SwitchCamera className="me-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <SelectValue placeholder="เลือกกล้อง" />
             </SelectTrigger>
             <SelectContent>

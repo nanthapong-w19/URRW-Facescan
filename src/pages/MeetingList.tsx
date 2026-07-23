@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { CalendarDays, Users, Plus, MapPin, Loader2, CalendarClock, CheckCircle2 } from 'lucide-react'
+import { LoadingState } from '@/components/ui/loading-state'
+import { CalendarDays, Users, Plus, MapPin, CalendarClock, CheckCircle2 } from 'lucide-react'
 import { getMeetings } from '@/lib/store'
 import { useAdminAuth } from '@/lib/adminAuth'
 import type { Meeting } from '@/lib/types'
@@ -78,9 +79,7 @@ export default function MeetingList() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/70 bg-card p-10 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> กำลังโหลดรายการประชุม...
-        </div>
+        <LoadingState label="กำลังโหลดรายการประชุม..." />
       ) : meetings.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/70 bg-card p-10 text-center">
           <CalendarClock className="h-8 w-8 text-muted-foreground" />

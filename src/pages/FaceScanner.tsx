@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { PageHeader } from '@/components/ui/page-header'
 import {
   ScanFace,
   Loader2,
@@ -368,14 +369,10 @@ export default function FaceScanner() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">
-          สแกนใบหน้าเพื่อเช็คอิน
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          จัดใบหน้าให้อยู่ตรงกลางกรอบกล้อง ระบบจะเช็คอินให้อัตโนมัติเมื่อพบข้อมูลตรงกัน
-        </p>
-      </div>
+      <PageHeader
+        title="สแกนใบหน้าเพื่อเช็คอิน"
+        description="จัดใบหน้าให้อยู่ตรงกลางกรอบกล้อง ระบบจะเช็คอินให้อัตโนมัติเมื่อพบข้อมูลตรงกัน"
+      />
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-5">
         <Card className="border-border/70 shadow-soft md:col-span-3">
@@ -390,7 +387,7 @@ export default function FaceScanner() {
               {cameraState === 'ready' && devices.length > 1 && (
                 <Select value={activeDeviceId} onValueChange={(id) => startCamera(id)}>
                   <SelectTrigger className="h-8 w-[168px] text-xs">
-                    <SwitchCamera className="mr-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <SwitchCamera className="me-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <SelectValue placeholder="เลือกกล้อง" />
                   </SelectTrigger>
                   <SelectContent>
@@ -498,12 +495,12 @@ export default function FaceScanner() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={manualQuery}
                 onChange={(e) => setManualQuery(e.target.value)}
                 placeholder="พิมพ์รหัสพนักงานหรือชื่อ"
-                className="pl-8"
+                className="ps-8"
               />
             </div>
 
