@@ -31,11 +31,11 @@ import {
   ClipboardList,
 } from 'lucide-react'
 import { getMeeting, deleteMeeting, getMeetingCheckins, recordMeetingCheckin, updateMeeting } from '@/lib/store'
-import { supabase } from '@/lib/supabaseClient'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { MATCH_THRESHOLD } from '@/lib/faceEngine'
 import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
 import type { RealtimeChange } from '@/lib/realtimeSync'
+import { useRealtimeChannel } from '@/hooks/useRealtimeChannel'
 import { MEETING_ROOMS } from '@/lib/constants'
 import { MeetingRoomBadge } from '@/components/MeetingRoomBadge'
 import type { Meeting, MeetingCheckin, MeetingCheckinRow, MeetingParticipant } from '@/lib/types'
@@ -138,38 +138,24 @@ export default function MeetingDetail() {
   // event patches the one row it describes (via realtimeSync.ts) instead
   // of refetching this meeting's whole check-in list on every event; a
   // reconnect after a dropped websocket still gets a full refetch as a
-  // safety net (see the `hasConnectedBefore` gate below), so an event
-  // missed while disconnected can't leave this screen silently stale.
-  useEffect(() => {
-    if (!id) return
-    let hasConnectedBefore = false
-    const channel = supabase
-      .channel(`facein-meeting-checkins-${id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'facein_meeting_checkins', filter: `meeting_id=eq.${id}` },
-        (payload) => {
-          setCheckins((prev) =>
-            applyMeetingCheckinEvent(prev, payload as unknown as RealtimeChange<MeetingCheckinRow>)
-          )
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          if (hasConnectedBefore) {
-            getMeetingCheckins(id)
-              .then(setCheckins)
-              .catch(() => {
-                // non-critical: the next successful reconnect will catch up
-              })
-          }
-          hasConnectedBefore = true
-        }
-      })
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [id])
+  // safety net (see useRealtimeChannel's onReconnect), so an event missed
+  // while disconnected can't leave this screen silently stale.
+  useRealtimeChannel({
+    table: 'facein_meeting_checkins',
+    filter: `meeting_id=eq.${id}`,
+    enabled: Boolean(id),
+    onEvent: (payload) => {
+      setCheckins((prev) => applyMeetingCheckinEvent(prev, payload as unknown as RealtimeChange<MeetingCheckinRow>))
+    },
+    onReconnect: () => {
+      if (!id) return
+      getMeetingCheckins(id)
+        .then(setCheckins)
+        .catch(() => {
+          // non-critical: the next successful reconnect will catch up
+        })
+    },
+  })
 
   async function handleDelete() {
     if (!id) return

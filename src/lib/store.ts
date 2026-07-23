@@ -435,12 +435,14 @@ export async function recordMeetingCheckin(
 // FaceScanner.tsx calls `hasCheckedInToday` on every detection tick (twice a
 // second), so it must stay a synchronous, local check rather than a query.
 
+function isToday(iso: string): boolean {
+  return new Date(iso).toDateString() === new Date().toDateString()
+}
+
 export function hasCheckedInToday(checkins: CheckinRecord[], memberId: string): boolean {
-  const today = new Date().toDateString()
-  return checkins.some((c) => c.memberId === memberId && new Date(c.time).toDateString() === today)
+  return checkins.some((c) => c.memberId === memberId && isToday(c.time))
 }
 
 export function todaysCheckins(checkins: CheckinRecord[]): CheckinRecord[] {
-  const today = new Date().toDateString()
-  return checkins.filter((c) => new Date(c.time).toDateString() === today)
+  return checkins.filter((c) => isToday(c.time))
 }

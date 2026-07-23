@@ -25,68 +25,12 @@ import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { createMeeting } from '@/lib/store'
 import { MEETING_ROOMS } from '@/lib/constants'
+import { parseThaiDateInput, formatThaiDateInput } from '@/lib/thaiCalendar'
+import { parseTimeInput, autoFormatSegmented } from '@/lib/dateTimeInput'
 
 // 24-hour "HH:mm" — the everyday Thai convention (no am/pm split).
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
-
-// Typed date field uses the everyday Thai written format: "dd/MM/yyyy" with
-// a Buddhist-era year (yyyy = Gregorian + 543). Accepts 1-2 digit day/month
-// so "3/7/2569" works while typing, not just the zero-padded form.
-function parseThaiDateInput(text: string): Date | undefined {
-  const m = text.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (!m) return undefined
-  const day = Number(m[1])
-  const month = Number(m[2])
-  const yearAD = Number(m[3]) - 543
-  const date = new Date(yearAD, month - 1, day)
-  // Rejects overflow like 31/02 silently rolling into March.
-  if (date.getFullYear() !== yearAD || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined
-  return date
-}
-
-function formatThaiDateInput(date: Date): string {
-  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear() + 543}`
-}
-
-// Typed time field: plain 24-hour "H:mm" or "HH:mm".
-function parseTimeInput(text: string): string | undefined {
-  const m = text.trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
-  if (!m) return undefined
-  return `${m[1].padStart(2, '0')}:${m[2]}`
-}
-
-// Auto-inserts the group separator as digits are typed, e.g. "2307" ->
-// "23/07" -> keep typing -> "23/07/2569". `groupLengths` is each segment's
-// digit count (date: [2,2,4], time: [2,2]); a separator is appended right
-// after a non-last segment fills up, so typing never requires the user to
-// type "/" or ":" themselves.
-// Deleting the separator itself (backspace landing on it, character count
-// dropping but digit count unchanged) is treated as "delete the last digit
-// too" — otherwise backspace would appear to do nothing right after a "/".
-function autoFormatSegmented(raw: string, prevFormatted: string, groupLengths: number[], separator: string): string {
-  let digits = raw.replace(/\D/g, '')
-  if (raw.length < prevFormatted.length) {
-    const prevDigits = prevFormatted.replace(/\D/g, '')
-    if (digits.length === prevDigits.length && digits.length > 0) {
-      digits = digits.slice(0, -1)
-    }
-  }
-  const maxDigits = groupLengths.reduce((a, b) => a + b, 0)
-  digits = digits.slice(0, maxDigits)
-
-  let out = ''
-  let idx = 0
-  groupLengths.forEach((len, i) => {
-    if (digits.length <= idx) return
-    const isLast = i === groupLengths.length - 1
-    const chunk = digits.slice(idx, idx + len)
-    out += chunk
-    idx += len
-    if (!isLast && chunk.length === len) out += separator
-  })
-  return out
-}
 
 // Hidden system account — never shown, searchable, or selectable as a
 // meeting participant (not a real invitee, so it shouldn't appear in the
@@ -296,7 +240,7 @@ export default function CreateMeeting() {
                           setTimeInputText(meetingTimeOfDay)
                         }
                       }}
-                      placeholder="ชม:นาที เช่น 09:30"
+                      placeholder="ตัวอย่าง (16:00)"
                       inputMode="numeric"
                       maxLength={5}
                       className="pe-9"

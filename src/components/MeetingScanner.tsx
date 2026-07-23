@@ -287,26 +287,31 @@ export default function MeetingScanner({
     // for the rare case a browser's native fullscreen sizing doesn't kick in).
     <div ref={containerRef} className={cn(isFullscreen && 'fixed inset-0 z-50 overflow-y-auto bg-background p-3 sm:p-4')}>
       <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex h-full min-h-0 flex-col border-none shadow-none')}>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
           <div>
             <CardTitle className="font-display flex items-center gap-2 text-base">
               <ScanFace className="h-4 w-4 text-primary" /> สแกนใบหน้าเพื่อเช็คอินเข้าร่วมประชุม
             </CardTitle>
             <CardDescription>รองรับผู้เข้าร่วมที่ลงทะเบียนใบหน้าแล้ว {registeredParticipants.length} คน</CardDescription>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {/* flex-nowrap: these two buttons must always wrap together as one
+              group (below the title, on narrow screens) rather than being
+              free to separate from each other — otherwise one can end up on
+              a different line than the other, effectively going missing
+              from view depending on scroll position. */}
+          <div className="flex flex-nowrap items-center gap-2 shrink-0">
             {camera.cameraState === 'ready' ? (
-              <Button size="sm" variant="outline" onClick={camera.stop} className="gap-1.5">
+              <Button size="sm" variant="outline" onClick={camera.stop} className="shrink-0 gap-1.5">
                 <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => camera.start()} className="gap-1.5">
+              <Button size="sm" variant="outline" onClick={() => camera.start()} className="shrink-0 gap-1.5">
                 <Camera className="h-3.5 w-3.5" /> เปิดกล้อง
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={toggleFullscreen} className="gap-1.5">
+            <Button size="sm" variant="outline" onClick={toggleFullscreen} className="shrink-0 gap-1.5">
               {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-              {isFullscreen ? 'ย่อออกจากเต็มจอ' : 'ขยายเต็มจอ'}
+              {isFullscreen ? 'ย่อออกจากเต็มจอ' : 'โหมดเต็มจอ'}
             </Button>
           </div>
         </CardHeader>
@@ -515,7 +520,7 @@ function ManualMeetingCheckin({
   return (
     <div className="flex shrink-0 flex-col gap-1.5">
       <p className={cn('flex items-center gap-1.5 text-xs font-semibold', isFullscreen ? 'text-slate-500' : 'text-muted-foreground')}>
-        <KeyRound className="h-3.5 w-3.5" /> เช็คอินแบบ Manual
+        <KeyRound className="h-3.5 w-3.5" /> เช็คอินด้วยรหัส
       </p>
       <div className="relative">
         <Search

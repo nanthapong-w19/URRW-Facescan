@@ -23,9 +23,9 @@ import {
   Minimize2,
 } from 'lucide-react'
 import { getMeeting, getMeetingCheckins } from '@/lib/store'
-import { supabase } from '@/lib/supabaseClient'
 import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
 import type { RealtimeChange } from '@/lib/realtimeSync'
+import { useRealtimeChannel } from '@/hooks/useRealtimeChannel'
 import type { Meeting, MeetingCheckin, MeetingCheckinRow } from '@/lib/types'
 import { cn, formatCheckinTime } from '@/lib/utils'
 import { getFullscreenElement, requestFullscreen, exitFullscreen, onFullscreenChange } from '@/lib/fullscreen'
@@ -163,24 +163,25 @@ export default function MeetingSummary() {
 
   // Same live-update approach as MeetingDetail.tsx — someone can have this
   // summary open while check-ins are still happening on the kiosk screen.
-  useEffect(() => {
-    if (!id) return
-    const channel = supabase
-      .channel(`facein-meeting-summary-${id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'facein_meeting_checkins', filter: `meeting_id=eq.${id}` },
-        (payload) => {
-          setCheckins((prev) =>
-            applyMeetingCheckinEvent(prev, payload as unknown as RealtimeChange<MeetingCheckinRow>)
-          )
-        }
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [id])
+  // A reconnect after a dropped websocket gets a full refetch as a safety
+  // net (see useRealtimeChannel's onReconnect), so an event missed while
+  // disconnected can't leave a projected summary silently stale.
+  useRealtimeChannel({
+    table: 'facein_meeting_checkins',
+    filter: `meeting_id=eq.${id}`,
+    enabled: Boolean(id),
+    onEvent: (payload) => {
+      setCheckins((prev) => applyMeetingCheckinEvent(prev, payload as unknown as RealtimeChange<MeetingCheckinRow>))
+    },
+    onReconnect: () => {
+      if (!id) return
+      getMeetingCheckins(id)
+        .then(setCheckins)
+        .catch(() => {
+          // non-critical: the next successful reconnect will catch up
+        })
+    },
+  })
 
   const checkinByMember = useMemo(() => new Map(checkins.map((c) => [c.memberId, c])), [checkins])
   const participants = useMemo(() => meeting?.participants ?? [], [meeting])
