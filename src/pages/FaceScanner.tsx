@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { CheckinSuccessToast } from '@/components/CheckinSuccessToast'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/ui/search-input'
 import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/components/ui/page-header'
 import {
@@ -14,7 +14,6 @@ import {
   KeyRound,
   Camera,
   CameraOff,
-  Search,
   SwitchCamera,
   ShieldAlert,
   Eye,
@@ -519,15 +518,11 @@ export default function FaceScanner() {
             <CardDescription>สำหรับกรณีที่ระบบสแกนใบหน้ามีปัญหา หรือกล้องใช้งานไม่ได้</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="relative">
-              <Search className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={manualQuery}
-                onChange={(e) => setManualQuery(e.target.value)}
-                placeholder="พิมพ์รหัสพนักงานหรือชื่อ"
-                className="ps-8"
-              />
-            </div>
+            <SearchInput
+              value={manualQuery}
+              onChange={(e) => setManualQuery(e.target.value)}
+              placeholder="พิมพ์รหัสพนักงานหรือชื่อ"
+            />
 
             <div className="min-h-[3rem] space-y-1.5">
               {manualQuery.trim() && manualMatches.length === 0 && (

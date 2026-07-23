@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/ui/search-input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -31,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { UserPlus, ScanFace, Pencil, Trash2, Search, CheckCircle2, CircleDashed, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { UserPlus, ScanFace, Pencil, Trash2, CheckCircle2, CircleDashed, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { addMember, updateMember, deleteMember, registerFace, getMemberPhotos } from '@/lib/store'
 import type { Member, MemberRole } from '@/lib/types'
@@ -49,15 +50,19 @@ const DEPARTMENTS = [
   'ศิลปะ',
   'การงานอาชีพ',
   'ภาษาต่างประเทศ',
+  'กิจกรรมแนะแนว',
   'ฝ่ายบริหาร',
   'บุคลากรทางการศึกษา',
 ]
 
 const POSITIONS = [
-  'ผู้อำนวยการโรงเรียน',
-  'รองผู้อำนวยการโรงเรียน',
+  'ผู้อำนวยการ',
+  'รองผู้อำนวยการ',
+  'ผู้ช่วยผู้อำนวยการ',
   'ครู',
   'ครูอัตราจ้าง',
+  'ครูผู้ช่วย',
+  'พนักงานราชการ',
   'เจ้าหน้าที่สำนักงาน',
 ]
 
@@ -70,10 +75,12 @@ const ROLE_LABELS: Record<MemberRole, string> = {
 }
 const ROLES: MemberRole[] = ['user', 'admin', 'viewer']
 
-type SortKey = 'name' | 'department' | 'position' | 'role' | 'faceStatus'
+type SortKey = 'employeeId' | 'name' | 'department' | 'position' | 'role' | 'faceStatus'
 
 function sortValue(m: Member, key: SortKey): string {
   switch (key) {
+    case 'employeeId':
+      return m.employeeId
     case 'name':
       return m.name
     case 'department':
@@ -135,7 +142,6 @@ export default function MemberList() {
   const { members } = useAppData()
   const [query, setQuery] = useState('')
   const [deptFilter, setDeptFilter] = useState<string>('all')
-  const [showAdminViewer, setShowAdminViewer] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
@@ -173,15 +179,14 @@ export default function MemberList() {
         m.name.toLowerCase().includes(query.toLowerCase()) ||
         m.employeeId.toLowerCase().includes(query.toLowerCase())
       const matchesDept = deptFilter === 'all' || m.department === deptFilter
-      const matchesRole = showAdminViewer || (m.role !== 'admin' && m.role !== 'viewer')
-      return matchesQuery && matchesDept && matchesRole
+      return matchesQuery && matchesDept
     })
     if (sortKey) {
       const dir = sortDir === 'asc' ? 1 : -1
       result.sort((a, b) => sortValue(a, sortKey).localeCompare(sortValue(b, sortKey), 'th') * dir)
     }
     return result
-  }, [members, query, deptFilter, showAdminViewer, sortKey, sortDir])
+  }, [members, query, deptFilter, sortKey, sortDir])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -277,15 +282,12 @@ export default function MemberList() {
               <CardDescription>ทั้งหมด {filtered.length} คน</CardDescription>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative">
-                <Search className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="ค้นหาชื่อ, รหัสพนักงาน"
-                  className="w-full ps-8 sm:w-64"
-                />
-              </div>
+              <SearchInput
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="ค้นหาชื่อ, รหัส"
+                className="w-full sm:w-64"
+              />
               <Select value={deptFilter} onValueChange={setDeptFilter}>
                 <SelectTrigger className="w-full sm:w-56">
                   <SelectValue placeholder="กลุ่มสาระการเรียนรู้" />
@@ -299,22 +301,22 @@ export default function MemberList() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => setShowAdminViewer((v) => !v)}
-              >
-                {showAdminViewer ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                {showAdminViewer ? 'ซ่อนผู้ดูแลระบบ/ผู้แสดงผล' : 'แสดงผู้ดูแลระบบ/ผู้แสดงผล'}
-              </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <Table>
+          {/* min-w-max: without it, the table's own `w-full` just lets columns
+              shrink to fit a narrow viewport and cell content (name, badges)
+              wraps onto multiple lines — this parent's overflow-x-auto never
+              actually engages. min-w-max forces the table to its natural
+              content width instead, so it's this that scrolls horizontally
+              on mobile while every cell stays on one line. */}
+          <Table className="min-w-max">
             <TableHeader>
               <TableRow>
+                <SortableTableHead sortKey="employeeId" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
+                  รหัส
+                </SortableTableHead>
                 <SortableTableHead sortKey="name" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
                   บุคลากร
                 </SortableTableHead>
@@ -325,31 +327,29 @@ export default function MemberList() {
                   ตำแหน่ง
                 </SortableTableHead>
                 <SortableTableHead sortKey="role" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
-                  Role
+                  บทบาท
                 </SortableTableHead>
                 <SortableTableHead sortKey="faceStatus" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
                   สถานะใบหน้า
                 </SortableTableHead>
-                <TableHead className="text-right">การจัดการ</TableHead>
+                <TableHead className="text-left">เครื่องมือ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                     ไม่พบบุคลากรที่ตรงกับเงื่อนไข
                   </TableCell>
                 </TableRow>
               )}
               {filtered.map((m) => (
                 <TableRow key={m.id} className="group">
+                  <TableCell className="text-sm text-muted-foreground">{m.employeeId}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <InitialsAvatar name={m.name} photo={photos[m.id]} variant="soft" />
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{m.name}</p>
-                        <p className="text-xs text-muted-foreground">{m.employeeId}</p>
-                      </div>
+                      <p className="text-sm font-medium text-foreground">{m.name}</p>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -400,7 +400,7 @@ export default function MemberList() {
                         onClick={() => setFaceDialogMember(m)}
                       >
                         <ScanFace className="h-3.5 w-3.5" />
-                        <span className="hidden md:inline">ลงทะเบียนใบหน้า</span>
+                        <span className="hidden md:inline">ใบหน้า</span>
                       </Button>
                       <Button size="icon" variant="ghost" onClick={() => openEditForm(m)}>
                         <Pencil className="h-4 w-4" />
@@ -431,7 +431,7 @@ export default function MemberList() {
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="employeeId">รหัสพนักงาน</Label>
+              <Label htmlFor="employeeId">รหัส</Label>
               <Input
                 id="employeeId"
                 value={form.employeeId}

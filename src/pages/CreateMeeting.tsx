@@ -6,6 +6,7 @@ import { th } from 'date-fns/locale'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/ui/search-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -19,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Users, CalendarPlus, CalendarDays, Clock } from 'lucide-react'
+import { Users, CalendarPlus, CalendarDays, Clock } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { createMeeting } from '@/lib/store'
@@ -411,10 +412,7 @@ export default function CreateMeeting() {
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ค้นหาชื่อ รหัสพนักงาน หรือกลุ่มสาระฯ" className="ps-8" />
-          </div>
+          <SearchInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ค้นหาชื่อ รหัสพนักงาน หรือกลุ่มสาระฯ" />
           <div className="max-h-80 space-y-1 overflow-y-auto rounded-xl border border-border/70 p-2">
             {filteredMembers.length === 0 && (
               <p className="p-3 text-center text-sm text-muted-foreground">ไม่พบสมาชิกที่ตรงกัน</p>
