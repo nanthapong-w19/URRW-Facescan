@@ -23,8 +23,9 @@ const SCAN_INTERVAL_MS = 500
 // it with the matched member's name (any registered member, not just
 // admins), or "ไม่รู้จัก" if nothing matches. It never signs anyone in and
 // never navigates away on its own. The only way to actually log in is the
-// manual employee-ID form below, which still records an "admin session"
-// (see lib/adminAuth.tsx) and still requires role === 'admin'.
+// manual employee-ID form below, which still records a session (see
+// lib/adminAuth.tsx) and requires role === 'admin' or 'viewer' — plain
+// 'user' members have no login access.
 export default function Login() {
   const { members } = useAppData()
   const { loginAsAdmin } = useAdminAuth()
@@ -193,8 +194,8 @@ export default function Login() {
       setManualError('ไม่พบรหัสบุคลากรนี้ในระบบ')
       return
     }
-    if (member.role !== 'admin') {
-      setManualError('รหัสบุคลากรนี้ไม่มีสิทธิ์ผู้ดูแลระบบ (admin)')
+    if (member.role !== 'admin' && member.role !== 'viewer') {
+      setManualError('รหัสบุคลากรนี้ไม่มีสิทธิ์เข้าสู่ระบบ (admin หรือ ผู้แสดงผล)')
       return
     }
     completeLogin(member)
@@ -349,7 +350,7 @@ export default function Login() {
         </Card>
 
         <p className="text-center text-[11px] leading-relaxed text-primary-foreground/50">
-          ระบบสงวนสิทธิ์การเข้าใช้งานเฉพาะผู้ดูแลระบบที่ได้รับอนุญาตเท่านั้น
+          ระบบสงวนสิทธิ์การเข้าใช้งานเฉพาะผู้ดูแลระบบและผู้แสดงผลที่ได้รับอนุญาตเท่านั้น
         </p>
       </div>
 

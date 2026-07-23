@@ -49,13 +49,14 @@ const DEPARTMENTS = [
   'ฝ่ายบริหาร',
 ]
 
-// Fixed two-value set (unlike ตำแหน่ง/position, which is free text) — a
-// dropdown makes sense here since there are exactly these two roles.
+// Fixed value set (unlike ตำแหน่ง/position, which is free text) — a
+// dropdown makes sense here since there are exactly these fixed roles.
 const ROLE_LABELS: Record<MemberRole, string> = {
   admin: 'ผู้ดูแลระบบ',
   user: 'ผู้ใช้งานทั่วไป',
+  viewer: 'ผู้แสดงผล',
 }
-const ROLES: MemberRole[] = ['user', 'admin']
+const ROLES: MemberRole[] = ['user', 'admin', 'viewer']
 
 interface MemberFormState {
   employeeId: string
@@ -278,7 +279,9 @@ export default function MemberList() {
                         'gap-1 border-none font-normal',
                         m.role === 'admin'
                           ? 'bg-accent/20 text-amber-800 dark:text-accent'
-                          : 'bg-muted text-muted-foreground'
+                          : m.role === 'viewer'
+                            ? 'bg-sky-500/10 text-sky-700 dark:text-sky-400'
+                            : 'bg-muted text-muted-foreground'
                       )}
                     >
                       {ROLE_LABELS[m.role]}

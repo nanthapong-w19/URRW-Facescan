@@ -2,8 +2,8 @@ export type FaceStatus = 'registered' | 'unregistered'
 
 // Access role — currently just descriptive data (this app has no login/auth,
 // so a "role" doesn't gate anything yet), but modeled as a real union type
-// rather than a free string since the value space is fixed at exactly these two.
-export type MemberRole = 'admin' | 'user'
+// rather than a free string since the value space is fixed at exactly these values.
+export type MemberRole = 'admin' | 'user' | 'viewer'
 
 export interface Member {
   id: string

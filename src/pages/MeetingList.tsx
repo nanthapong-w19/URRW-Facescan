@@ -33,6 +33,7 @@ function formatMeetingTime(iso: string | null) {
 
 export default function MeetingList() {
   const { admin } = useAdminAuth()
+  const isAdmin = admin?.role === 'admin'
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -65,13 +66,15 @@ export default function MeetingList() {
             เข้าสู่ระบบในฐานะ <span className="font-medium text-foreground">{admin?.name}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button asChild size="sm" className="gap-1.5">
-            <Link to="/meetings/new">
-              <Plus className="h-3.5 w-3.5" /> สร้างการประชุมใหม่
-            </Link>
-          </Button>
-        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" className="gap-1.5">
+              <Link to="/meetings/new">
+                <Plus className="h-3.5 w-3.5" /> สร้างการประชุมใหม่
+              </Link>
+            </Button>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -82,18 +85,20 @@ export default function MeetingList() {
         <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/70 bg-card p-10 text-center">
           <CalendarClock className="h-8 w-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">ยังไม่มีการประชุมที่สร้างไว้</p>
-          <Button asChild size="sm" className="mt-2 gap-1.5">
-            <Link to="/meetings/new">
-              <Plus className="h-3.5 w-3.5" /> สร้างการประชุมแรก
-            </Link>
-          </Button>
+          {isAdmin && (
+            <Button asChild size="sm" className="mt-2 gap-1.5">
+              <Link to="/meetings/new">
+                <Plus className="h-3.5 w-3.5" /> สร้างการประชุมแรก
+              </Link>
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {meetings.map((meeting) => {
             const attendance = attendanceRate(meeting)
             return (
-              <Link key={meeting.id} to={`/meetings/${meeting.id}`}>
+              <Link key={meeting.id} to={isAdmin ? `/meetings/${meeting.id}` : `/meetings/${meeting.id}/summary`}>
                 <Card className="h-full border-border/70 shadow-soft transition-shadow hover:shadow-lift">
                   <CardHeader className="space-y-2">
                     <CardTitle className="font-display line-clamp-2 text-base leading-snug">{meeting.title}</CardTitle>

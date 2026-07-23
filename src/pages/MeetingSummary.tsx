@@ -173,6 +173,29 @@ export default function MeetingSummary() {
 
   const checkinByMember = useMemo(() => new Map(checkins.map((c) => [c.memberId, c])), [checkins])
   const participants = useMemo(() => meeting?.participants ?? [], [meeting])
+  // Live feed for the "เช็คอินล่าสุด" card up top — driven straight off the
+  // same realtime `checkins` state the rest of this page uses (see the
+  // postgres_changes subscription above), newest first, capped to the 10
+  // most recent so the card doesn't grow unbounded over a long meeting.
+  // Older check-ins just drop off this card's view — `checkins` itself
+  // (used for the present/absent stats below) still keeps every record.
+  const recentCheckins = useMemo(() => {
+    const participantsById = new Map(participants.map((p) => [p.memberId, p]))
+    return [...checkins]
+      .sort((a, b) => new Date(b.checkedInAt).getTime() - new Date(a.checkedInAt).getTime())
+      .slice(0, 10)
+      .map((c) => {
+        const p = participantsById.get(c.memberId)
+        return {
+          id: c.id,
+          name: p?.name ?? 'ไม่ทราบชื่อผู้เข้าร่วม',
+          department: p?.department ?? '',
+          method: c.method,
+          time: formatCheckinTime(c.checkedInAt),
+          photoUrl: c.photoUrl,
+        }
+      })
+  }, [checkins, participants])
   const presentParticipants = useMemo(
     () => participants.filter((p) => checkinByMember.has(p.memberId)),
     [participants, checkinByMember]
@@ -265,6 +288,72 @@ export default function MeetingSummary() {
           )}
         </div>
       </div>
+
+      <Card className="border-border/70 shadow-soft">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="font-display flex items-center gap-2 text-base">
+              <UserCheck className="h-4 w-4 text-primary" /> เช็คอินล่าสุด
+            </CardTitle>
+            <CardDescription>ผู้เช็คอินเข้าประชุมล่าสุด</CardDescription>
+          </div>
+          <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+            LIVE
+          </span>
+        </CardHeader>
+        <CardContent>
+          {recentCheckins.length === 0 ? (
+            <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">ยังไม่มีผู้เช็คอิน</p>
+          ) : (
+            // Fixed max-height + scroll — without this, the card kept
+            // growing taller with every new check-in (up to the 10-item
+            // cap) instead of staying a stable size on screen.
+            <ul className={cn('divide-y divide-border/70 overflow-y-auto', isFullscreen ? 'max-h-[50vh]' : 'max-h-80')}>
+              {recentCheckins.map((c, i) => (
+                <li key={c.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <div
+                      className={cn(
+                        'relative h-9 w-9 shrink-0 overflow-hidden rounded-full',
+                        i === 0 && 'ring-2 ring-emerald-500/60'
+                      )}
+                    >
+                      {c.photoUrl ? (
+                        <img src={c.photoUrl} alt={c.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary to-accent text-xs font-semibold text-primary-foreground">
+                          {c.name.charAt(0)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{c.department}</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'gap-1 border-none text-xs font-normal',
+                        c.method === 'face' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      <CircleCheck className="h-3 w-3" />
+                      {c.method === 'face' ? 'สแกนใบหน้า' : 'เช็คอินด้วยรหัส'}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{c.time}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {participants.length > 0 && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

@@ -128,6 +128,7 @@ export default function MeetingDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { admin } = useAdminAuth()
+  const isAdmin = admin?.role === 'admin'
 
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [checkins, setCheckins] = useState<MeetingCheckin[]>([])
@@ -230,7 +231,7 @@ export default function MeetingDetail() {
   const [savingField, setSavingField] = useState(false)
 
   function startEditing(field: EditableField) {
-    if (!admin || !meeting) return
+    if (!isAdmin || !meeting) return
     if (field === 'time') setTimeDraft(toDatetimeLocalValue(meeting.meetingTime))
     if (field === 'location') setLocationDraft(meeting.location)
     if (field === 'description') setDescriptionDraft(meeting.description)
@@ -319,7 +320,7 @@ export default function MeetingDetail() {
               <ClipboardList className="h-3.5 w-3.5" /> สรุปข้อมูลการประชุม
             </Link>
           </Button>
-          {admin && (
+          {isAdmin && (
             <Button variant="outline" size="sm" onClick={handleDelete} disabled={deleting} className="gap-1.5 text-destructive hover:text-destructive">
               {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} ลบการประชุม
             </Button>
@@ -372,10 +373,10 @@ export default function MeetingDetail() {
               <button
                 type="button"
                 onClick={() => startEditing('time')}
-                disabled={!admin}
+                disabled={!isAdmin}
                 className={cn(
                   'flex items-center gap-3 rounded-xl border border-border/70 bg-secondary/30 px-4 py-3 text-left',
-                  admin && 'hover:border-primary/40 hover:bg-secondary'
+                  isAdmin && 'hover:border-primary/40 hover:bg-secondary'
                 )}
               >
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -421,10 +422,10 @@ export default function MeetingDetail() {
               <button
                 type="button"
                 onClick={() => startEditing('location')}
-                disabled={!admin}
+                disabled={!isAdmin}
                 className={cn(
                   'flex items-center gap-3 rounded-xl border border-border/70 bg-secondary/30 px-4 py-3 text-left',
-                  admin && 'hover:border-primary/40 hover:bg-secondary'
+                  isAdmin && 'hover:border-primary/40 hover:bg-secondary'
                 )}
               >
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent-foreground">
@@ -461,10 +462,10 @@ export default function MeetingDetail() {
             <button
               type="button"
               onClick={() => startEditing('description')}
-              disabled={!admin}
+              disabled={!isAdmin}
               className={cn(
                 'w-full rounded-xl border border-dashed border-border/70 bg-muted/40 p-4 text-left',
-                admin && 'hover:border-primary/40 hover:bg-muted/60'
+                isAdmin && 'hover:border-primary/40 hover:bg-muted/60'
               )}
             >
               <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -473,7 +474,7 @@ export default function MeetingDetail() {
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{meeting.description}</p>
             </button>
           ) : (
-            admin && (
+            isAdmin && (
               <button
                 type="button"
                 onClick={() => startEditing('description')}

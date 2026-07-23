@@ -36,7 +36,7 @@ export function rowToMember(row: MemberRow): Member {
     name: row.name,
     department: row.department,
     position: row.position ?? '',
-    role: row.role === 'admin' ? 'admin' : 'user',
+    role: row.role === 'admin' || row.role === 'viewer' ? row.role : 'user',
     faceStatus: row.face_descriptor ? 'registered' : 'unregistered',
     faceDescriptor: row.face_descriptor ?? null,
     // Not present on the lean select getMembers() below uses — `?? null`

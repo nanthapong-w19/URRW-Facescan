@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import Navbar from '@/components/Navbar'
 import RequireAdmin from '@/components/RequireAdmin'
+import RequireAuth from '@/components/RequireAuth'
 import Dashboard from '@/pages/Dashboard'
 import MemberList from '@/pages/MemberList'
 import FaceScanner from '@/pages/FaceScanner'
@@ -69,9 +70,9 @@ function AppShell() {
           <Route
             path="/meetings"
             element={
-              <RequireAdmin>
+              <RequireAuth>
                 <MeetingList />
-              </RequireAdmin>
+              </RequireAuth>
             }
           />
           <Route

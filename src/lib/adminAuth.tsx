@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { Member } from './types'
+import type { Member, MemberRole } from './types'
 
 // Lightweight client-side "admin session" gate for the meeting features.
 //
@@ -17,6 +17,10 @@ export interface AdminSession {
   id: string
   name: string
   employeeId: string
+  // Which of the logged-in member's roles this session carries — 'admin'
+  // gets full meeting management (create/edit/delete), 'viewer' only gets
+  // read-only access to the meeting list and each meeting's liveview.
+  role: MemberRole
 }
 
 const STORAGE_KEY = 'facein_admin_session'
@@ -35,7 +39,12 @@ function readStoredSession(): AdminSession | null {
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed.id === 'string' && typeof parsed.name === 'string') {
-      return { id: parsed.id, name: parsed.name, employeeId: parsed.employeeId ?? '' }
+      return {
+        id: parsed.id,
+        name: parsed.name,
+        employeeId: parsed.employeeId ?? '',
+        role: parsed.role === 'viewer' ? 'viewer' : 'admin',
+      }
     }
     return null
   } catch {
@@ -55,7 +64,12 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   }, [admin])
 
   function loginAsAdmin(member: Member) {
-    setAdmin({ id: member.id, name: member.name, employeeId: member.employeeId })
+    setAdmin({
+      id: member.id,
+      name: member.name,
+      employeeId: member.employeeId,
+      role: member.role === 'viewer' ? 'viewer' : 'admin',
+    })
   }
 
   function logout() {
