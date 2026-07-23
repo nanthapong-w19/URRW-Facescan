@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -39,13 +38,17 @@ export default function CreateMeeting() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [submitting, setSubmitting] = useState(false)
 
+  // ผู้ดูแล (admin) and ผู้แสดงผล (viewer) are system/staff accounts, not
+  // real meeting invitees — hidden from the roster entirely so they can't
+  // be searched, selected, or swept in by "เลือกทั้งหมด".
   const members = useMemo(
-    () => allMembers.filter((m) => !HIDDEN_EMPLOYEE_IDS.includes(m.employeeId.toLowerCase())),
+    () =>
+      allMembers.filter(
+        (m) => !HIDDEN_EMPLOYEE_IDS.includes(m.employeeId.toLowerCase()) && m.role !== 'admin' && m.role !== 'viewer'
+      ),
     [allMembers]
   )
 
-  // Anyone in the (visible) roster can be invited — not just role === 'user'
-  // — since an admin may reasonably want to invite another admin too.
   const filteredMembers = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return members
@@ -63,19 +66,17 @@ export default function CreateMeeting() {
     })
   }
 
-  // Bulk-invite everyone who can actually be matched at the face-scan
-  // check-in (faceStatus === 'registered') — not the whole roster, since
-  // members without a registered face can only check in manually anyway.
-  const membersWithFace = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
+  // Bulk-invite every regular user in the (visible) roster — admin/viewer
+  // accounts are already excluded from `members` above, so this is all
+  // ผู้ใช้งานทั่วไป, regardless of whether they have a registered face yet
+  // (those without one can still be invited and check in manually).
+  const allSelected = members.length > 0 && members.every((m) => selectedIds.has(m.id))
 
-  // Toggle: press once to select everyone with a registered face, press
-  // again (once they're all already selected) to clear the selection
-  // entirely, rather than just the face-having subset — a second press is
+  // Toggle: press once to select everyone, press again (once they're all
+  // already selected) to clear the selection entirely — a second press is
   // read as "start over," not "un-invite only the auto-selected ones."
-  const allWithFaceSelected = membersWithFace.length > 0 && membersWithFace.every((m) => selectedIds.has(m.id))
-
-  function toggleSelectAllWithFace() {
-    setSelectedIds(allWithFaceSelected ? new Set() : new Set(membersWithFace.map((m) => m.id)))
+  function toggleSelectAll() {
+    setSelectedIds(allSelected ? new Set() : new Set(members.map((m) => m.id)))
   }
 
   async function handleSubmit() {
@@ -162,10 +163,10 @@ export default function CreateMeeting() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={toggleSelectAllWithFace}
-            disabled={membersWithFace.length === 0}
+            onClick={toggleSelectAll}
+            disabled={members.length === 0}
           >
-            {allWithFaceSelected ? 'ยกเลิกทั้งหมด' : 'เลือกทั้งหมด'}
+            {allSelected ? 'ยกเลิกทั้งหมด' : 'เลือกทั้งหมด'}
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -197,11 +198,6 @@ export default function CreateMeeting() {
                     </p>
                   </div>
                 </div>
-                {m.role === 'admin' && (
-                  <Badge variant="secondary" className="shrink-0 font-normal">
-                    admin
-                  </Badge>
-                )}
               </label>
             ))}
           </div>
