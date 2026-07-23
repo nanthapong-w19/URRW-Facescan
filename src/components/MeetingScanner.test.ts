@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nextMatchStreak, streakHeldMs, type MatchStreak } from './MeetingDetail'
+import { nextMatchStreak, streakHeldMs, type MatchStreak } from './MeetingScanner'
 
 describe('nextMatchStreak', () => {
   const idle: MatchStreak = { memberId: null, since: 0 }

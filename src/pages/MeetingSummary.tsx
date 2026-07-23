@@ -27,29 +27,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
 import type { RealtimeChange } from '@/lib/realtimeSync'
 import type { Meeting, MeetingCheckin, MeetingCheckinRow } from '@/lib/types'
-import { cn } from '@/lib/utils'
-
-// Safari/iOS and older Edge/Firefox expose the Fullscreen API under vendor
-// prefixes (or, on iOS Safari, not at all for non-<video> elements) — reading
-// the unprefixed property directly returns undefined there and crashes the
-// click handler with "requestFullscreen is not a function".
-const FULLSCREEN_CHANGE_EVENTS = [
-  'fullscreenchange',
-  'webkitfullscreenchange',
-  'mozfullscreenchange',
-  'MSFullscreenChange',
-] as const
-
-function getFullscreenElement(): Element | null {
-  const doc = document as any
-  return (
-    document.fullscreenElement
-    || doc.webkitFullscreenElement
-    || doc.mozFullScreenElement
-    || doc.msFullscreenElement
-    || null
-  )
-}
+import { cn, formatCheckinTime } from '@/lib/utils'
+import { getFullscreenElement, requestFullscreen, exitFullscreen, onFullscreenChange } from '@/lib/fullscreen'
 import AttendanceDonut from '@/components/AttendanceDonut'
 import DepartmentAttendanceChart from '@/components/DepartmentAttendanceChart'
 
@@ -58,14 +37,6 @@ function formatMeetingDate(iso: string | null) {
   try {
     const d = new Date(iso)
     return `${d.toLocaleDateString('th-TH', { dateStyle: 'full' })} · ${d.toLocaleTimeString('th-TH', { timeStyle: 'short' })}`
-  } catch {
-    return iso
-  }
-}
-
-function formatCheckinTime(iso: string) {
-  try {
-    return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
   } catch {
     return iso
   }
@@ -138,17 +109,9 @@ export default function MeetingSummary() {
   // Fullscreen just enlarges the page for projecting on a meeting-room
   // screen — panels still hide/show per click like the windowed view.
   useEffect(() => {
-    function handleFullscreenChange() {
+    return onFullscreenChange(() => {
       setIsFullscreen(getFullscreenElement() === containerRef.current)
-    }
-    for (const evt of FULLSCREEN_CHANGE_EVENTS) {
-      document.addEventListener(evt, handleFullscreenChange)
-    }
-    return () => {
-      for (const evt of FULLSCREEN_CHANGE_EVENTS) {
-        document.removeEventListener(evt, handleFullscreenChange)
-      }
-    }
+    })
   }, [])
 
   async function toggleFullscreen() {
@@ -156,15 +119,7 @@ export default function MeetingSummary() {
     if (!el) return
     try {
       if (getFullscreenElement()) {
-        const exit = document.exitFullscreen
-          || (document as any).webkitExitFullscreen
-          || (document as any).mozCancelFullScreen
-          || (document as any).msExitFullscreen
-        if (exit) {
-          await exit.call(document)
-        } else {
-          setIsFullscreen(false)
-        }
+        await exitFullscreen()
         return
       }
 
@@ -175,14 +130,9 @@ export default function MeetingSummary() {
         return
       }
 
-      const request = el.requestFullscreen
-        || (el as any).webkitRequestFullscreen
-        || (el as any).webkitEnterFullscreen // iOS Safari (video-only, but harmless fallback attempt)
-        || (el as any).mozRequestFullScreen
-        || (el as any).msRequestFullscreen
-      if (request) {
-        await request.call(el)
-      } else {
+      try {
+        await requestFullscreen(el)
+      } catch {
         // Fullscreen API not supported at all on this device (e.g. iOS Safari
         // on a non-video element) — fall back to a CSS-only "fullscreen" look.
         setIsFullscreen(true)
