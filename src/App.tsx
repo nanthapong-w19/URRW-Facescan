@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
+import { cn } from '@/lib/utils'
 import Navbar from '@/components/Navbar'
 import RequireAdmin from '@/components/RequireAdmin'
 import RequireAuth from '@/components/RequireAuth'
@@ -51,9 +52,26 @@ function AppShell() {
         className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[420px] bg-gradient-to-b from-primary/10 via-accent/10 to-transparent dark:from-primary/20 dark:via-transparent"
         aria-hidden
       />
+      {/* เลือดหมู-ทอง-ขาว ambient wash for every page EXCEPT /#/login (which
+          already has its own dedicated animated backdrop, see index.css) —
+          two soft blurred corner glows, gold top-right / maroon bottom-left,
+          static (no motion) so it reads as ambiance rather than competing
+          with the login page's animated treatment. */}
+      {!hideNavbar && (
+        <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
+          <div className="absolute -top-24 -right-24 h-[420px] w-[420px] rounded-full bg-accent/10 blur-3xl dark:bg-accent/15" />
+          <div className="absolute -bottom-32 -left-24 h-[380px] w-[380px] rounded-full bg-primary/10 blur-3xl dark:bg-primary/15" />
+        </div>
+      )}
       {!hideNavbar && <Navbar />}
       <main
-        className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8"
+        className={cn(
+          'mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8',
+          // Scopes the card top-accent-bar / button sheen rules in index.css
+          // to every page except /#/login, without touching the shared
+          // Card/Button components themselves.
+          !hideNavbar && 'themed-pages'
+        )}
         style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
       >
         <Routes>

@@ -932,7 +932,7 @@ function MeetingScanner({
     // device (the `isFullscreen &&` classes are a CSS belt-and-braces fallback
     // for the rare case a browser's native fullscreen sizing doesn't kick in).
     <div ref={containerRef} className={cn(isFullscreen && 'fixed inset-0 z-50 overflow-y-auto bg-background p-3 sm:p-4')}>
-      <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex h-full flex-col border-none shadow-none')}>
+      <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex h-full min-h-0 flex-col border-none shadow-none')}>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <div>
             <CardTitle className="font-display flex items-center gap-2 text-base">
@@ -956,8 +956,8 @@ function MeetingScanner({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className={cn(isFullscreen && 'flex flex-1 flex-col')}>
-          <div className={cn('flex flex-col gap-3', isFullscreen ? 'flex-1 md:flex-row' : 'md:flex-row')}>
+        <CardContent className={cn(isFullscreen && 'flex min-h-0 flex-1 flex-col')}>
+          <div className={cn('flex flex-col gap-3', isFullscreen ? 'min-h-0 flex-1 md:flex-row' : 'md:flex-row')}>
             <div
               className={cn(
                 'relative overflow-hidden rounded-2xl bg-slate-900',
@@ -1025,13 +1025,19 @@ function MeetingScanner({
             <div
               className={cn(
                 'flex shrink-0 flex-col gap-3 rounded-2xl border p-3',
-                isFullscreen ? 'w-full border-white/10 bg-slate-900 text-white md:w-72' : 'w-full border-border/70 bg-card md:w-64'
+                isFullscreen
+                  ? 'w-full min-h-0 border-slate-200 bg-white text-slate-900 md:h-full md:w-72'
+                  : 'w-full self-start border-border/70 bg-card md:w-64'
               )}
             >
               {/* Round 42: "เช็คอินแบบ Manual" moved here (from its own
                   full-width card lower on the page) and shrunk down to a
                   compact widget, sitting directly above "เช็คอินล่าสุด" so
-                  both live in the same side panel next to the camera. */}
+                  both live in the same side panel next to the camera. In
+                  fullscreen the panel now stretches to match the camera's
+                  height (dropped `self-start`, added `md:h-full` above) so
+                  "เช็คอินล่าสุด" below can grow to fill it instead of being
+                  capped at a fixed 45vh regardless of the actual screen. */}
               <ManualMeetingCheckin
                 participants={participants}
                 checkedInIds={checkedInIds}
@@ -1047,15 +1053,26 @@ function MeetingScanner({
               <div
                 className={cn(
                   'flex flex-col gap-2 border-t pt-2.5',
-                  isFullscreen ? 'border-white/10' : 'border-border/60'
+                  isFullscreen ? 'min-h-0 flex-1 border-slate-200' : 'border-border/60'
                 )}
               >
-                <p className={cn('flex items-center gap-1.5 text-xs font-semibold', isFullscreen ? 'text-white/80' : 'text-muted-foreground')}>
-                  <Users className="h-3.5 w-3.5" /> เช็คอินล่าสุด
-                </p>
-                <div className={cn('space-y-1.5 overflow-y-auto', isFullscreen ? 'max-h-[45vh] flex-1' : 'max-h-56')}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className={cn('flex items-center gap-1.5 text-xs font-semibold', isFullscreen ? 'text-slate-500' : 'text-muted-foreground')}>
+                    <Users className="h-3.5 w-3.5" /> เช็คอินล่าสุด
+                  </p>
+                  {isFullscreen && (
+                    <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      </span>
+                      LIVE
+                    </span>
+                  )}
+                </div>
+                <div className={cn('space-y-1.5 overflow-y-auto', isFullscreen ? 'min-h-0 flex-1' : 'max-h-56')}>
                 {recentScans.length === 0 ? (
-                  <p className={cn('rounded-lg px-2.5 py-2 text-xs', isFullscreen ? 'bg-white/5 text-white/50' : 'bg-muted text-muted-foreground')}>
+                  <p className={cn('rounded-lg px-2.5 py-2 text-xs', isFullscreen ? 'bg-slate-50 text-slate-400' : 'bg-muted text-muted-foreground')}>
                     ยังไม่มีผู้เช็คอิน
                   </p>
                 ) : (
@@ -1064,7 +1081,7 @@ function MeetingScanner({
                       key={r.id}
                       className={cn(
                         'flex items-center gap-2 rounded-lg border px-2.5 py-1.5',
-                        isFullscreen ? 'border-white/10 bg-white/5' : 'border-border/50 bg-secondary/40',
+                        isFullscreen ? 'border-slate-200 bg-slate-50' : 'border-border/50 bg-secondary/40',
                         i === 0 && 'border-emerald-500/60'
                       )}
                     >
@@ -1079,13 +1096,13 @@ function MeetingScanner({
                         <CheckCircle2
                           className={cn(
                             'absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full text-emerald-500',
-                            isFullscreen ? 'bg-slate-900' : 'bg-card'
+                            isFullscreen ? 'bg-white' : 'bg-card'
                           )}
                         />
                       </div>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{r.name}</p>
-                        <p className={cn('truncate text-xs', isFullscreen ? 'text-white/60' : 'text-muted-foreground')}>
+                        <p className={cn('truncate text-xs', isFullscreen ? 'text-slate-500' : 'text-muted-foreground')}>
                           {r.department ? `${r.department} · ` : ''}
                           {r.time}
                         </p>
@@ -1147,15 +1164,15 @@ function ManualMeetingCheckin({
   }, [participants, query])
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <p className={cn('flex items-center gap-1.5 text-xs font-semibold', isFullscreen ? 'text-white/80' : 'text-muted-foreground')}>
+    <div className="flex shrink-0 flex-col gap-1.5">
+      <p className={cn('flex items-center gap-1.5 text-xs font-semibold', isFullscreen ? 'text-slate-500' : 'text-muted-foreground')}>
         <KeyRound className="h-3.5 w-3.5" /> เช็คอินแบบ Manual
       </p>
       <div className="relative">
         <Search
           className={cn(
             'pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2',
-            isFullscreen ? 'text-white/40' : 'text-muted-foreground'
+            isFullscreen ? 'text-slate-400' : 'text-muted-foreground'
           )}
         />
         <Input
@@ -1167,14 +1184,14 @@ function ManualMeetingCheckin({
             // (see Login.tsx's manual-id input for the same reasoning);
             // shrinks to the compact text-sm once there's room for it.
             'h-8 pl-7 text-base sm:text-sm',
-            isFullscreen && 'border-white/20 bg-white/5 text-white placeholder:text-white/40'
+            isFullscreen && 'border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400'
           )}
         />
       </div>
       {query.trim() && (
         <div className="space-y-1">
           {matches.length === 0 ? (
-            <p className={cn('rounded-lg px-2 py-1.5 text-xs', isFullscreen ? 'bg-white/5 text-white/50' : 'bg-muted text-muted-foreground')}>
+            <p className={cn('rounded-lg px-2 py-1.5 text-xs', isFullscreen ? 'bg-slate-50 text-slate-400' : 'bg-muted text-muted-foreground')}>
               ไม่พบผู้เข้าร่วมที่ตรงกัน
             </p>
           ) : (
@@ -1191,11 +1208,11 @@ function ManualMeetingCheckin({
                   disabled={checkedIn}
                   className={cn(
                     'flex w-full items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-colors',
-                    isFullscreen ? 'border-white/10' : 'border-border/60',
+                    isFullscreen ? 'border-slate-200' : 'border-border/60',
                     checkedIn
                       ? 'cursor-not-allowed opacity-60'
                       : isFullscreen
-                        ? 'hover:bg-white/10'
+                        ? 'hover:bg-slate-100'
                         : 'hover:border-primary/50 hover:bg-secondary'
                   )}
                 >
@@ -1203,7 +1220,7 @@ function ManualMeetingCheckin({
                   {checkedIn ? (
                     <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                   ) : (
-                    <span className={cn('shrink-0 text-[10px] font-medium', isFullscreen ? 'text-accent' : 'text-primary')}>เช็คอิน</span>
+                    <span className="shrink-0 text-[10px] font-medium text-primary">เช็คอิน</span>
                   )}
                 </button>
               )

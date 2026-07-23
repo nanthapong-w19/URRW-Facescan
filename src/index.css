@@ -118,6 +118,63 @@
   }
 }
 
+/* เลือดหมู-ทอง-ขาว component accents — scoped to `.themed-pages` (every
+   route except /#/login, see App.tsx) rather than baked into the shared
+   Card/Button components, since Login.tsx reuses those same components for
+   its own bespoke maroon/gold treatment and shouldn't pick these up too.
+   Targets the components' own literal utility classes instead of adding new
+   className props, so no call site anywhere had to change. */
+.themed-pages :where(.bg-primary.text-primary-foreground) {
+  background-image: linear-gradient(135deg, hsl(var(--primary)), hsl(350 55% 22%) 55%, hsl(var(--accent)) 140%);
+  background-size: 180% 180%;
+  background-position: 0% 0%;
+  transition: background-position 0.4s ease;
+}
+.themed-pages :where(.bg-primary.text-primary-foreground):hover {
+  background-position: 100% 100%;
+}
+/* Same sweep, cream base — Button's "secondary" variant (bg-secondary
+   text-secondary-foreground). */
+.themed-pages :where(.bg-secondary.text-secondary-foreground) {
+  background-image: linear-gradient(135deg, hsl(var(--secondary)), hsl(43 55% 90%) 55%, hsl(var(--accent) / 0.4) 140%);
+  background-size: 180% 180%;
+  background-position: 0% 0%;
+  transition: background-position 0.4s ease;
+}
+.themed-pages :where(.bg-secondary.text-secondary-foreground):hover {
+  background-position: 100% 100%;
+}
+/* Same sweep, danger hue — Button's "destructive" variant. Stays red/maroon
+   only (never gold) so it keeps reading as a warning, not an invite. */
+.themed-pages :where(.bg-destructive.text-destructive-foreground) {
+  background-image: linear-gradient(135deg, hsl(var(--destructive)), hsl(350 70% 30%) 140%);
+  background-size: 180% 180%;
+  background-position: 0% 0%;
+  transition: background-position 0.4s ease;
+}
+.themed-pages :where(.bg-destructive.text-destructive-foreground):hover {
+  background-position: 100% 100%;
+}
+/* Button's "outline" variant (border border-input bg-background) is flat/
+   transparent at rest so it blends with the page — the gold-maroon sweep
+   only appears on hover, replacing Tailwind's flat hover:bg-accent fill,
+   rather than at rest like the filled variants above. */
+.themed-pages :where(.border.border-input.bg-background):hover {
+  background-image: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--primary)) 140%);
+  background-position: 100% 100%;
+  background-size: 180% 180%;
+  border-color: transparent;
+}
+/* Button's "ghost" variant has no persistent bg/border to key off, only its
+   own hover:bg-accent/hover:text-accent-foreground tokens (shared verbatim
+   with "outline" — excluding .border-input keeps the two rules from
+   double-matching the same element). */
+.themed-pages :where(.hover\:bg-accent.hover\:text-accent-foreground):not(.border-input):hover {
+  background-image: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--primary)) 140%);
+  background-position: 100% 100%;
+  background-size: 180% 180%;
+}
+
 /* /#/login's animated เลือดหมู-ขาว-ทอง background (round 36). The base
    backdrop is an oversized (220% x 220%) diagonal gradient that slowly
    pans its background-position along one axis, so the hue glides between
