@@ -274,8 +274,8 @@ export default function MemberList() {
         }
       />
 
-      <Card className="border-border/70 shadow-soft">
-        <CardHeader className="gap-3">
+      <Card className="flex max-h-[70vh] flex-col border-border/70 shadow-soft">
+        <CardHeader className="shrink-0 gap-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="font-display text-base">รายชื่อบุคลากร</CardTitle>
@@ -304,15 +304,18 @@ export default function MemberList() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="min-h-0 flex-1 overflow-auto">
           {/* min-w-max: without it, the table's own `w-full` just lets columns
               shrink to fit a narrow viewport and cell content (name, badges)
-              wraps onto multiple lines — this parent's overflow-x-auto never
-              actually engages. min-w-max forces the table to its natural
-              content width instead, so it's this that scrolls horizontally
-              on mobile while every cell stays on one line. */}
+              wraps onto multiple lines — this parent's overflow-auto never
+              actually engages horizontally. min-w-max forces the table to its
+              natural content width instead, so it's this that scrolls
+              horizontally on mobile while every cell stays on one line.
+              Vertically, this same overflow-auto is what makes the row list
+              scroll inside the fixed-height card instead of growing the
+              whole page. */}
           <Table className="min-w-max">
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
                 <SortableTableHead sortKey="employeeId" activeKey={sortKey} dir={sortDir} onSort={toggleSort}>
                   รหัส
