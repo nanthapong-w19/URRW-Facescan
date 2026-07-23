@@ -44,8 +44,8 @@ import {
 import { getMeeting, deleteMeeting, getMeetingCheckins, recordMeetingCheckin, updateMeeting } from '@/lib/store'
 import { supabase } from '@/lib/supabaseClient'
 import { useAdminAuth } from '@/lib/adminAuth'
-import { loadFaceModels, detectFaceWithDescriptor, descriptorDistance, MATCH_THRESHOLD } from '@/lib/faceEngine'
-import { describeGetUserMediaError } from '@/lib/cameraHelpers'
+import { MATCH_THRESHOLD } from '@/lib/faceEngine'
+import { useFaceCamera } from '@/hooks/useFaceCamera'
 import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
 import type { RealtimeChange } from '@/lib/realtimeSync'
 import { MEETING_ROOMS } from '@/lib/constants'
@@ -115,10 +115,8 @@ function playSuccessChime() {
   }
 }
 
-type CameraState = 'idle' | 'loading' | 'ready' | 'error'
 type ScanFeedback = { name: string; department: string; position: string; method: 'face' | 'manual' } | null
 
-const SCAN_INTERVAL_MS = 500
 const REPEAT_COOLDOWN_MS = 15000
 // The same person must match continuously for this long before a check-in
 // is actually recorded — protects against a single fleeting frame (motion
@@ -126,6 +124,26 @@ const REPEAT_COOLDOWN_MS = 15000
 // triggering a check-in immediately. ~1.5s of holding steady in front of
 // the camera, same idea as a tap-and-hold button.
 const CONFIRM_HOLD_MS = 1500
+
+export interface MatchStreak {
+  memberId: string | null
+  since: number
+}
+
+// Tick policy (see CONTEXT.md "Tick policy"), split out as a pure function
+// so it's testable without a DOM/video element: the SAME participant must
+// match continuously for CONFIRM_HOLD_MS before a check-in is confirmed —
+// switching to no-match, a different person, or losing the face entirely
+// resets the streak, so only sustained agreement counts.
+export function nextMatchStreak(streak: MatchStreak, matchedMemberId: string | null, now: number): MatchStreak {
+  if (matchedMemberId === null) return { memberId: null, since: 0 }
+  if (streak.memberId !== matchedMemberId) return { memberId: matchedMemberId, since: now }
+  return streak
+}
+
+export function streakHeldMs(streak: MatchStreak, now: number): number {
+  return streak.memberId ? now - streak.since : 0
+}
 
 // This page doubles as the meeting's public check-in kiosk — anyone with
 // the link can open it and scan in, no admin login required (see App.tsx:
@@ -712,17 +730,9 @@ function MeetingScanner({
   onManualCheckin: (participant: MeetingParticipant, photoUrl?: string) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const timerRef = useRef<number | null>(null)
-  const paintRafRef = useRef<number | null>(null)
   const lastMatchRef = useRef<Record<string, number>>({})
-  const overlayRef = useRef<{ box: { x: number; y: number; width: number; height: number }; color: string; label: string } | null>(null)
   const matchStreakRef = useRef<{ memberId: string | null; since: number }>({ memberId: null, since: 0 })
 
-  const [cameraState, setCameraState] = useState<CameraState>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
   const [feedback, setFeedback] = useState<ScanFeedback>(null)
   const [confirmProgress, setConfirmProgress] = useState(0)
   // Two independent flags feed the single `isFullscreen` flag the rest of
@@ -735,6 +745,60 @@ function MeetingScanner({
   const [nativeFullscreen, setNativeFullscreen] = useState(false)
   const [manualFullscreen, setManualFullscreen] = useState(false)
   const isFullscreen = nativeFullscreen || manualFullscreen
+
+  // Tick policy (see CONTEXT.md "Tick policy"): the SAME participant must
+  // match continuously for CONFIRM_HOLD_MS before a check-in is recorded —
+  // protects against a single fleeting frame (motion blur, someone briefly
+  // walking past, a photo held up for an instant) triggering a check-in
+  // immediately. Switching to no-match, a different person, or losing the
+  // face entirely resets the streak; only sustained agreement counts.
+  const camera = useFaceCamera({
+    candidates: registeredParticipants,
+    onTick: (result) => {
+      if (!result) {
+        matchStreakRef.current = { memberId: null, since: 0 }
+        setConfirmProgress(0)
+        return null
+      }
+      const { face, bestMatch, isMatch } = result
+
+      const now = Date.now()
+      matchStreakRef.current = nextMatchStreak(matchStreakRef.current, isMatch ? bestMatch!.candidate.memberId : null, now)
+      const heldMs = streakHeldMs(matchStreakRef.current, now)
+      const isConfirmed = isMatch && heldMs >= CONFIRM_HOLD_MS
+      setConfirmProgress(isMatch ? Math.min(1, heldMs / CONFIRM_HOLD_MS) : 0)
+
+      if (isConfirmed) {
+        const { candidate: participant, distance } = bestMatch!
+        const lastTime = lastMatchRef.current[participant.memberId] ?? 0
+        if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !checkedInIds.has(participant.memberId)) {
+          lastMatchRef.current[participant.memberId] = Date.now()
+          const snapshot = camera.canvasRef.current ? captureFaceSnapshot(camera.canvasRef.current, face.box) : null
+          onMatch(participant, distance, snapshot ?? undefined)
+          setFeedback({ name: participant.name, department: participant.department, position: participant.position, method: 'face' })
+          matchStreakRef.current = { memberId: null, since: 0 }
+          setConfirmProgress(0)
+          window.setTimeout(() => setFeedback(null), 3200)
+        }
+      }
+
+      return {
+        box: face.box,
+        color: isMatch ? (isConfirmed ? '#10b981' : '#3b82f6') : '#f59e0b',
+        label: isMatch
+          ? isConfirmed
+            ? bestMatch!.candidate.name
+            : `${bestMatch!.candidate.name} · กำลังยืนยัน`
+          : 'ไม่ใช่ผู้เข้าร่วมประชุม',
+      }
+    },
+  })
+
+  useEffect(() => {
+    camera.start()
+    return () => camera.stop()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Side "เช็คอินล่าสุด" panel — driven straight off the meeting's live
   // checkins (already kept fresh via MeetingDetail's realtime subscription),
@@ -805,163 +869,6 @@ function MeetingScanner({
     }
   }, [nativeFullscreen, manualFullscreen])
 
-  const paintLoop = useCallback(() => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (video && canvas && video.readyState >= 2 && video.videoWidth > 0) {
-      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-      }
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.save()
-        ctx.translate(canvas.width, 0)
-        ctx.scale(-1, 1)
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const overlay = overlayRef.current
-        if (overlay) {
-          ctx.strokeStyle = overlay.color
-          ctx.lineWidth = 4
-          ctx.strokeRect(overlay.box.x, overlay.box.y, overlay.box.width, overlay.box.height)
-        }
-        ctx.restore()
-
-        // Name label above the box — box coordinates come from the
-        // un-mirrored detector, so the label's x has to be mirrored
-        // separately to line up with the mirrored box drawn above.
-        if (overlay) {
-          const { box, color, label } = overlay
-          const mirroredX = canvas.width - box.x - box.width
-          ctx.font = '600 20px "IBM Plex Sans Thai", "IBM Plex Sans", sans-serif'
-          const textWidth = ctx.measureText(label).width
-          ctx.fillStyle = color
-          ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)
-          ctx.fillStyle = '#ffffff'
-          ctx.fillText(label, mirroredX + 6, box.y - 11)
-        }
-      }
-    }
-    paintRafRef.current = requestAnimationFrame(paintLoop)
-  }, [])
-
-  const startCamera = useCallback(async () => {
-    setCameraState('loading')
-    setErrorMsg('')
-    try {
-      await loadFaceModels()
-    } catch {
-      setErrorMsg('ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ กรุณาใช้ "เช็คอินแบบ Manual" ในแผงด้านข้างแทน หรือลองใหม่อีกครั้ง')
-      setCameraState('error')
-      return
-    }
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
-      setCameraState('ready')
-    } catch (err) {
-      setErrorMsg(describeGetUserMediaError(err))
-      setCameraState('error')
-    }
-  }, [])
-
-  const stopCamera = useCallback(() => {
-    if (timerRef.current) window.clearInterval(timerRef.current)
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-    setCameraState('idle')
-  }, [])
-
-  useEffect(() => {
-    startCamera()
-    paintRafRef.current = requestAnimationFrame(paintLoop)
-    return () => {
-      if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current)
-      if (timerRef.current) window.clearInterval(timerRef.current)
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    if (cameraState !== 'ready') return
-    timerRef.current = window.setInterval(async () => {
-      const video = videoRef.current
-      if (!video || video.readyState < 2) return
-      let result
-      try {
-        result = await detectFaceWithDescriptor(video)
-      } catch {
-        return
-      }
-      if (!result) {
-        overlayRef.current = null
-        matchStreakRef.current = { memberId: null, since: 0 }
-        setConfirmProgress(0)
-        return
-      }
-
-      let best: { participant: MeetingParticipant; distance: number } | null = null
-      for (const p of registeredParticipants) {
-        if (!p.faceDescriptor) continue
-        const distance = descriptorDistance(result.descriptor, p.faceDescriptor)
-        if (!best || distance < best.distance) best = { participant: p, distance }
-      }
-
-      const isMatch = best && best.distance < MATCH_THRESHOLD
-
-      // Track how long the SAME participant has matched continuously.
-      // Switching to no-match, a different person, or losing the face
-      // entirely resets the streak — only sustained agreement counts.
-      const streak = matchStreakRef.current
-      if (isMatch) {
-        const memberId = best!.participant.memberId
-        if (streak.memberId !== memberId) {
-          matchStreakRef.current = { memberId, since: Date.now() }
-        }
-      } else {
-        matchStreakRef.current = { memberId: null, since: 0 }
-      }
-      const heldMs = matchStreakRef.current.memberId ? Date.now() - matchStreakRef.current.since : 0
-      const isConfirmed = Boolean(isMatch) && heldMs >= CONFIRM_HOLD_MS
-      setConfirmProgress(isMatch ? Math.min(1, heldMs / CONFIRM_HOLD_MS) : 0)
-
-      overlayRef.current = {
-        box: result.box,
-        color: isMatch ? (isConfirmed ? '#10b981' : '#3b82f6') : '#f59e0b',
-        label: isMatch
-          ? isConfirmed
-            ? best!.participant.name
-            : `${best!.participant.name} · กำลังยืนยัน`
-          : 'ไม่ใช่ผู้เข้าร่วมประชุม',
-      }
-
-      if (isConfirmed) {
-        const { participant, distance } = best!
-        const lastTime = lastMatchRef.current[participant.memberId] ?? 0
-        if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !checkedInIds.has(participant.memberId)) {
-          lastMatchRef.current[participant.memberId] = Date.now()
-          const snapshot = canvasRef.current ? captureFaceSnapshot(canvasRef.current, result.box) : null
-          onMatch(participant, distance, snapshot ?? undefined)
-          setFeedback({ name: participant.name, department: participant.department, position: participant.position, method: 'face' })
-          matchStreakRef.current = { memberId: null, since: 0 }
-          setConfirmProgress(0)
-          window.setTimeout(() => setFeedback(null), 3200)
-        }
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, SCAN_INTERVAL_MS)
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraState, registeredParticipants, checkedInIds])
-
   return (
     // containerRef is the element that actually goes fullscreen (via the
     // Fullscreen API) when the button below is pressed. It wraps the header
@@ -979,12 +886,12 @@ function MeetingScanner({
             <CardDescription>รองรับผู้เข้าร่วมที่ลงทะเบียนใบหน้าแล้ว {registeredParticipants.length} คน</CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {cameraState === 'ready' ? (
-              <Button size="sm" variant="outline" onClick={stopCamera} className="gap-1.5">
+            {camera.cameraState === 'ready' ? (
+              <Button size="sm" variant="outline" onClick={camera.stop} className="gap-1.5">
                 <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => startCamera()} className="gap-1.5">
+              <Button size="sm" variant="outline" onClick={() => camera.start()} className="gap-1.5">
                 <Camera className="h-3.5 w-3.5" /> เปิดกล้อง
               </Button>
             )}
@@ -1002,37 +909,37 @@ function MeetingScanner({
                 isFullscreen ? 'min-h-[45vh] flex-1' : 'mx-auto aspect-video w-full max-w-xl md:mx-0 md:flex-1'
               )}
             >
-              {cameraState === 'loading' && (
+              {camera.cameraState === 'loading' && (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-white/80">
                   <Loader2 className="h-7 w-7 animate-spin" />
                   <p className="text-sm">กำลังเตรียมกล้องและโมเดลตรวจจับใบหน้า...</p>
                 </div>
               )}
-              {cameraState === 'error' && (
+              {camera.cameraState === 'error' && (
                 <div className="flex h-full flex-col items-center justify-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
                   <AlertTriangle className="h-8 w-8 shrink-0 text-amber-400" />
-                  <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
-                  <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 shrink-0 gap-1.5">
+                  <p className="max-w-sm text-sm leading-relaxed text-white/80">{camera.errorMsg}</p>
+                  <Button size="sm" variant="secondary" onClick={() => camera.start()} className="mt-1 shrink-0 gap-1.5">
                     <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
                   </Button>
                 </div>
               )}
-              {cameraState === 'idle' && (
+              {camera.cameraState === 'idle' && (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-white/60">
                   <CameraOff className="h-7 w-7" />
                   <p className="text-sm">กล้องปิดอยู่</p>
                 </div>
               )}
               <video
-                ref={videoRef}
+                ref={camera.videoRef}
                 muted
                 playsInline
                 webkit-playsinline="true"
                 className="absolute -left-full -top-full h-px w-px opacity-0"
               />
               <canvas
-                ref={canvasRef}
-                className={cn('h-full w-full object-cover', cameraState !== 'ready' && 'hidden')}
+                ref={camera.canvasRef}
+                className={cn('h-full w-full object-cover', camera.cameraState !== 'ready' && 'hidden')}
               />
               {confirmProgress > 0 && confirmProgress < 1 && !feedback && (
                 <div className="absolute inset-x-0 bottom-0 bg-blue-600/90 px-4 py-2 text-center text-sm font-medium text-white backdrop-blur-sm">
@@ -1105,8 +1012,8 @@ function MeetingScanner({
                 }}
                 isFullscreen={isFullscreen}
                 capturePhoto={() =>
-                  cameraState === 'ready' && canvasRef.current
-                    ? captureCenterSquareSnapshot(canvasRef.current)
+                  camera.cameraState === 'ready' && camera.canvasRef.current
+                    ? captureCenterSquareSnapshot(camera.canvasRef.current)
                     : null
                 }
               />

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { CheckinSuccessToast } from '@/components/CheckinSuccessToast'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -27,22 +27,12 @@ import {
 } from '@/components/ui/select'
 import { useAppData } from '@/hooks/useAppData'
 import { recordCheckin, hasCheckedInToday } from '@/lib/store'
-import {
-  loadFaceModels,
-  detectFaceWithDescriptor,
-  descriptorDistance,
-  distanceToConfidence,
-  MATCH_THRESHOLD,
-  averageEyeAspectRatio,
-  EAR_BLINK_THRESHOLD,
-} from '@/lib/faceEngine'
-import { describeGetUserMediaError, sampleCanvasBrightness } from '@/lib/cameraHelpers'
+import { distanceToConfidence, averageEyeAspectRatio, EAR_BLINK_THRESHOLD } from '@/lib/faceEngine'
+import { useFaceCamera } from '@/hooks/useFaceCamera'
 import type { Member } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-type CameraState = 'idle' | 'loading' | 'ready' | 'error'
 type ScanFeedback = { kind: 'success' | 'unknown'; name?: string; department?: string; position?: string } | null
-type OverlayBox = { box: { x: number; y: number; width: number; height: number }; color: string; label: string } | null
 
 // Plays a short, pleasant two-tone chime using the Web Audio API so no
 // external audio asset needs to be bundled.
@@ -69,288 +59,119 @@ function playSuccessChime() {
   }
 }
 
-const SCAN_INTERVAL_MS = 500
 const REPEAT_COOLDOWN_MS = 15000
 // How long a detected blink keeps the tracked face "live" for. Wide enough
 // to bridge a couple of scan ticks around the blink itself, short enough
 // that holding up a static photo can't coast on a single lucky detection.
 const LIVENESS_VALID_MS = 4000
 
+const MODEL_LOAD_ERROR_MESSAGE =
+  'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ อาจเกิดจากข้อจำกัดเครือข่ายของหน้าตัวอย่างนี้ กรุณารันโปรเจกต์นี้ในเครื่องของคุณเพื่อใช้กล้องจริง หรือใช้ "เช็คอินแบบ Manual" ด้านล่างแทนได้ทันที'
+
+export interface LivenessState {
+  eyesClosed: boolean
+  blinkAt: number | null
+}
+
+// Tick policy (see CONTEXT.md "Tick policy"), split out as a pure function
+// so it's testable without a DOM/video element: tracks eye-aspect-ratio
+// across ticks and requires one real blink (closed -> open transition)
+// before a match counts as "live" — a static photo or frozen video frame
+// held up to the camera can never produce that transition.
+export function nextLivenessState(state: LivenessState, ear: number, now: number): LivenessState {
+  if (ear < EAR_BLINK_THRESHOLD) return { ...state, eyesClosed: true }
+  if (state.eyesClosed) return { eyesClosed: false, blinkAt: now }
+  return state
+}
+
+export function isLive(blinkAt: number | null, now: number): boolean {
+  return blinkAt !== null && now - blinkAt < LIVENESS_VALID_MS
+}
+
 export default function FaceScanner() {
   const { members, checkins } = useAppData()
   const registeredMembers = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
 
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const timerRef = useRef<number | null>(null)
-  const paintRafRef = useRef<number | null>(null)
   const lastCheckinRef = useRef<Record<string, number>>({})
-  const overlayRef = useRef<OverlayBox>(null)
-  const framesPaintedRef = useRef(0)
-  const brightnessSamplesRef = useRef<number[]>([])
   const livenessRef = useRef<{ eyesClosed: boolean; blinkAt: number | null }>({
     eyesClosed: false,
     blinkAt: null,
   })
 
-  const [cameraState, setCameraState] = useState<CameraState>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
   const [feedback, setFeedback] = useState<ScanFeedback>(null)
   const [manualQuery, setManualQuery] = useState('')
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
-  const [activeDeviceId, setActiveDeviceId] = useState<string | undefined>(undefined)
-  const [trackMuted, setTrackMuted] = useState(false)
-  const [noFrames, setNoFrames] = useState(false)
-  const [blackFrames, setBlackFrames] = useState(false)
   const [waitingForBlink, setWaitingForBlink] = useState(false)
 
-  // Refreshes the labeled device list — labels are only populated once
-  // permission has been granted at least once, so this is called again
-  // right after a successful getUserMedia.
-  const refreshDeviceList = useCallback(async () => {
-    try {
-      const list = await navigator.mediaDevices.enumerateDevices()
-      setDevices(list.filter((d) => d.kind === 'videoinput'))
-    } catch {
-      // non-critical: the camera switcher just won't show if this fails
-    }
-  }, [])
-
-  // Continuously paints the current video frame onto a visible <canvas>
-  // (mirrored) instead of relying on the browser to composite a raw
-  // <video> element with a CSS transform. Some Chromium/GPU/driver
-  // combinations on Windows fail to paint a transformed <video> element
-  // at all (renders solid black) even though the underlying MediaStream
-  // is perfectly valid — drawing frames through a 2D canvas sidesteps
-  // that rendering path entirely and is far more consistent across
-  // devices/browsers.
-  const paintLoop = useCallback(() => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (video && canvas && video.readyState >= 2 && video.videoWidth > 0) {
-      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-      }
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.save()
-        ctx.translate(canvas.width, 0)
-        ctx.scale(-1, 1)
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-        const overlay = overlayRef.current
-        if (overlay) {
-          const { box, color } = overlay
-          ctx.strokeStyle = color
-          ctx.lineWidth = 4
-          ctx.strokeRect(box.x, box.y, box.width, box.height)
-        }
-        ctx.restore()
-
-        if (overlay) {
-          const { box, color, label } = overlay
-          const mirroredX = canvas.width - box.x - box.width
-          ctx.font = '600 20px "IBM Plex Sans Thai", "IBM Plex Sans", sans-serif'
-          const textWidth = ctx.measureText(label).width
-          ctx.fillStyle = color
-          ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)
-          ctx.fillStyle = '#ffffff'
-          ctx.fillText(label, mirroredX + 6, box.y - 11)
-        }
-
-        framesPaintedRef.current += 1
-        if (framesPaintedRef.current % 15 === 0) {
-          const brightness = sampleCanvasBrightness(canvas)
-          if (brightness !== null) {
-            const samples = brightnessSamplesRef.current
-            samples.push(brightness)
-            if (samples.length > 8) samples.shift()
-          }
-        }
-      }
-    }
-    paintRafRef.current = requestAnimationFrame(paintLoop)
-  }, [])
-
-  const startCamera = useCallback(
-    async (deviceId?: string, isRetryWithoutConstraints = false) => {
-      setCameraState('loading')
-      setErrorMsg('')
-      setTrackMuted(false)
-      setNoFrames(false)
-      setBlackFrames(false)
-      framesPaintedRef.current = 0
-      brightnessSamplesRef.current = []
-      try {
-        await loadFaceModels()
-      } catch {
-        setErrorMsg(
-          'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ อาจเกิดจากข้อจำกัดเครือข่ายของหน้าตัวอย่างนี้ กรุณารันโปรเจกต์นี้ในเครื่องของคุณเพื่อใช้กล้องจริง หรือใช้ "เช็คอินแบบ Manual" ด้านล่างแทนได้ทันที'
-        )
-        setCameraState('error')
-        return
-      }
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: deviceId && !isRetryWithoutConstraints ? { deviceId: { exact: deviceId } } : { facingMode: 'user' },
-        })
-        streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          await videoRef.current.play()
-        }
-        const track = stream.getVideoTracks()[0]
-        setActiveDeviceId(track?.getSettings().deviceId ?? deviceId)
-        if (track) {
-          setTrackMuted(track.muted)
-          track.onmute = () => setTrackMuted(true)
-          track.onunmute = () => setTrackMuted(false)
-        }
-        setCameraState('ready')
-        refreshDeviceList()
-
-        // A few seconds in, check two distinct failure modes that both
-        // *look* like "black screen" to the user but need different fixes:
-        // 1. The paint loop never received a single real frame at all
-        //    (stream "open" but literally nothing decoded yet).
-        // 2. Frames ARE being decoded and painted, but their content is
-        //    consistently near-black — the camera/OS/security software is
-        //    delivering genuine blackout frames. No web app code can fix
-        //    that; it needs to be resolved on the OS/driver/antivirus side.
-        window.setTimeout(() => {
-          const painted = framesPaintedRef.current
-          setNoFrames(painted === 0)
-          if (painted > 0) {
-            const samples = brightnessSamplesRef.current
-            const avg = samples.length ? samples.reduce((a, b) => a + b, 0) / samples.length : 0
-            setBlackFrames(avg < 8)
-          }
-        }, 3000)
-      } catch (err) {
-        // If a specific camera device fails with "overconstrained" (e.g.
-        // it disappeared, or its exact deviceId is no longer valid),
-        // automatically retry once with plain default constraints instead
-        // of just showing an error — this covers a lot of "works on some
-        // devices, not others" cases without the user needing to do anything.
-        const name = err instanceof DOMException ? err.name : ''
-        if (deviceId && !isRetryWithoutConstraints && (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError')) {
-          startCamera(undefined, true)
-          return
-        }
-        setErrorMsg(describeGetUserMediaError(err))
-        setCameraState('error')
-      }
-    },
-    [refreshDeviceList]
-  )
-
-  const stopCamera = useCallback(() => {
-    if (timerRef.current) window.clearInterval(timerRef.current)
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-    setCameraState('idle')
-  }, [])
-
-  useEffect(() => {
-    startCamera()
-    paintRafRef.current = requestAnimationFrame(paintLoop)
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current)
-      if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current)
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Main detection loop — throttled independently of the paint loop above.
-  useEffect(() => {
-    if (cameraState !== 'ready') return
-
-    timerRef.current = window.setInterval(async () => {
-      const video = videoRef.current
-      if (!video || video.readyState < 2) return
-      let result
-      try {
-        result = await detectFaceWithDescriptor(video)
-      } catch {
-        return
-      }
+  // Tick policy (see CONTEXT.md "Tick policy"): a lightweight liveness
+  // check — track eye-aspect-ratio across ticks and require one real blink
+  // (closed -> open transition) before trusting a match enough to check
+  // someone in. A static photo or frozen video frame held up to the camera
+  // will never produce that transition.
+  const camera = useFaceCamera({
+    candidates: registeredMembers,
+    modelLoadErrorMessage: MODEL_LOAD_ERROR_MESSAGE,
+    onTick: (result) => {
       if (!result) {
-        overlayRef.current = null
         livenessRef.current = { eyesClosed: false, blinkAt: null }
         setWaitingForBlink(false)
-        return
+        return null
       }
+      const { face, bestMatch, isMatch } = result
 
-      let best: { member: Member; distance: number } | null = null
-      for (const m of registeredMembers) {
-        if (!m.faceDescriptor) continue
-        const distance = descriptorDistance(result.descriptor, m.faceDescriptor)
-        if (!best || distance < best.distance) best = { member: m, distance }
-      }
+      const now = Date.now()
+      const ear = averageEyeAspectRatio(face.landmarks)
+      livenessRef.current = nextLivenessState(livenessRef.current, ear, now)
+      const live = isLive(livenessRef.current.blinkAt, now)
 
-      // Lightweight liveness check: track eye-aspect-ratio across ticks and
-      // require one real blink (closed -> open transition) before trusting
-      // a match enough to check someone in. A static photo or frozen video
-      // frame held up to the camera will never produce that transition.
-      const liveness = livenessRef.current
-      const ear = averageEyeAspectRatio(result.landmarks)
-      if (ear < EAR_BLINK_THRESHOLD) {
-        liveness.eyesClosed = true
-      } else if (liveness.eyesClosed) {
-        liveness.eyesClosed = false
-        liveness.blinkAt = Date.now()
-      }
-      const isLive = liveness.blinkAt !== null && Date.now() - liveness.blinkAt < LIVENESS_VALID_MS
+      setWaitingForBlink(isMatch && !live)
 
-      const isMatch = best && best.distance < MATCH_THRESHOLD
-      overlayRef.current = {
-        box: result.box,
-        color: isMatch ? (isLive ? '#10b981' : '#3b82f6') : '#f59e0b',
-        label: isMatch ? (isLive ? best!.member.name : `${best!.member.name} · กระพริบตา`) : 'ไม่พบในระบบ',
-      }
-      setWaitingForBlink(Boolean(isMatch) && !isLive)
-
-      if (isMatch && isLive) {
-        const member = best!.member
+      if (isMatch && live) {
+        const member = bestMatch!.candidate
         const lastTime = lastCheckinRef.current[member.id] ?? 0
         const alreadyToday = hasCheckedInToday(checkins, member.id)
         if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !alreadyToday) {
           lastCheckinRef.current[member.id] = Date.now()
-          try {
-            await recordCheckin(member, 'face', distanceToConfidence(best!.distance))
-            setFeedback({ kind: 'success', name: member.name, department: member.department, position: member.position })
-            playSuccessChime()
-            toast.custom(
-              () => (
-                <CheckinSuccessToast
-                  name={member.name}
-                  department={member.department}
-                  position={member.position}
-                  method="face"
-                  durationMs={3500}
-                />
-              ),
-              { duration: 3500 }
-            )
-            window.setTimeout(() => setFeedback(null), 3200)
-          } catch (err) {
-            // Allow retrying on the next tick instead of getting stuck
-            // thinking this member already checked in.
-            delete lastCheckinRef.current[member.id]
-            toast.error(err instanceof Error ? err.message : 'บันทึกการเช็คอินไม่สำเร็จ')
-          }
+          recordCheckin(member, 'face', distanceToConfidence(bestMatch!.distance))
+            .then(() => {
+              setFeedback({ kind: 'success', name: member.name, department: member.department, position: member.position })
+              playSuccessChime()
+              toast.custom(
+                () => (
+                  <CheckinSuccessToast
+                    name={member.name}
+                    department={member.department}
+                    position={member.position}
+                    method="face"
+                    durationMs={3500}
+                  />
+                ),
+                { duration: 3500 }
+              )
+              window.setTimeout(() => setFeedback(null), 3200)
+            })
+            .catch((err) => {
+              // Allow retrying on the next tick instead of getting stuck
+              // thinking this member already checked in.
+              delete lastCheckinRef.current[member.id]
+              toast.error(err instanceof Error ? err.message : 'บันทึกการเช็คอินไม่สำเร็จ')
+            })
         }
       }
-    }, SCAN_INTERVAL_MS)
 
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current)
-    }
-  }, [cameraState, registeredMembers, checkins])
+      const matchedName = bestMatch?.candidate.name
+      return {
+        box: face.box,
+        color: isMatch ? (live ? '#10b981' : '#3b82f6') : '#f59e0b',
+        label: isMatch ? (live ? matchedName! : `${matchedName} · กระพริบตา`) : 'ไม่พบในระบบ',
+      }
+    },
+  })
+
+  useEffect(() => {
+    camera.start()
+    return () => camera.stop()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const manualMatches = useMemo(() => {
     if (!manualQuery.trim()) return []
@@ -387,7 +208,7 @@ export default function FaceScanner() {
     setManualQuery('')
   }
 
-  const showFrameWarning = cameraState === 'ready' && (trackMuted || noFrames || blackFrames)
+  const showFrameWarning = camera.cameraState === 'ready' && (camera.trackMuted || camera.noFrames || camera.blackFrames)
 
   return (
     <div className="space-y-6">
@@ -406,14 +227,14 @@ export default function FaceScanner() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              {cameraState === 'ready' && devices.length > 1 && (
-                <Select value={activeDeviceId} onValueChange={(id) => startCamera(id)}>
+              {camera.cameraState === 'ready' && camera.devices.length > 1 && (
+                <Select value={camera.activeDeviceId} onValueChange={(id) => camera.start(id)}>
                   <SelectTrigger className="h-8 w-[168px] text-xs">
                     <SwitchCamera className="me-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <SelectValue placeholder="เลือกกล้อง" />
                   </SelectTrigger>
                   <SelectContent>
-                    {devices.map((d, i) => (
+                    {camera.devices.map((d, i) => (
                       <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
                         {d.label || `กล้อง ${i + 1}`}
                       </SelectItem>
@@ -421,12 +242,12 @@ export default function FaceScanner() {
                   </SelectContent>
                 </Select>
               )}
-              {cameraState === 'ready' ? (
-                <Button size="sm" variant="outline" onClick={stopCamera} className="gap-1.5">
+              {camera.cameraState === 'ready' ? (
+                <Button size="sm" variant="outline" onClick={camera.stop} className="gap-1.5">
                   <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
                 </Button>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => startCamera()} className="gap-1.5">
+                <Button size="sm" variant="outline" onClick={() => camera.start()} className="gap-1.5">
                   <Camera className="h-3.5 w-3.5" /> เปิดกล้อง
                 </Button>
               )}
@@ -434,17 +255,17 @@ export default function FaceScanner() {
           </CardHeader>
           <CardContent>
             <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-2xl bg-slate-900">
-              {cameraState === 'loading' && (
+              {camera.cameraState === 'loading' && (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-white/80">
                   <Loader2 className="h-7 w-7 animate-spin" />
                   <p className="text-sm">กำลังเตรียมกล้องและโมเดลตรวจจับใบหน้า...</p>
                 </div>
               )}
-              {cameraState === 'error' && (
+              {camera.cameraState === 'error' && (
                 <div className="flex h-full flex-col items-center justify-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
                   <AlertTriangle className="h-8 w-8 shrink-0 text-amber-400" />
-                  <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
-                  <Button size="sm" variant="secondary" onClick={() => startCamera()} className="mt-1 shrink-0 gap-1.5">
+                  <p className="max-w-sm text-sm leading-relaxed text-white/80">{camera.errorMsg}</p>
+                  <Button size="sm" variant="secondary" onClick={() => camera.start()} className="mt-1 shrink-0 gap-1.5">
                     <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
                   </Button>
                 </div>
@@ -456,24 +277,24 @@ export default function FaceScanner() {
                   (rather than display:none) keeps browsers from pausing
                   decode to save power. */}
               <video
-                ref={videoRef}
+                ref={camera.videoRef}
                 muted
                 playsInline
                 webkit-playsinline="true"
                 className="absolute -left-full -top-full h-px w-px opacity-0"
               />
               <canvas
-                ref={canvasRef}
+                ref={camera.canvasRef}
                 className={cn(
                   'h-full w-full object-cover',
-                  (cameraState === 'loading' || cameraState === 'error') && 'hidden'
+                  (camera.cameraState === 'loading' || camera.cameraState === 'error') && 'hidden'
                 )}
               />
 
               {showFrameWarning && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto bg-slate-900/95 p-4 text-center sm:p-6">
                   <ShieldAlert className="h-8 w-8 shrink-0 text-amber-400" />
-                  {blackFrames && !noFrames && !trackMuted ? (
+                  {camera.blackFrames && !camera.noFrames && !camera.trackMuted ? (
                     <p className="max-w-sm text-sm leading-relaxed text-white/90">
                       กล้องเชื่อมต่อและส่งภาพมาจริง แต่เนื้อหาของภาพเป็นสีดำสนิท — ไม่ใช่ปัญหาจากตัวแอปนี้
                       แต่เป็นระบบปฏิบัติการหรือซอฟต์แวร์ความปลอดภัยของเครื่องนี้เองที่ปิดกั้นภาพจริงไว้เฉพาะตอนใช้งานผ่านเบราว์เซอร์
@@ -490,7 +311,7 @@ export default function FaceScanner() {
                 </div>
               )}
 
-              {waitingForBlink && !feedback && cameraState === 'ready' && (
+              {waitingForBlink && !feedback && camera.cameraState === 'ready' && (
                 <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-blue-600/90 px-4 py-2 text-center text-sm font-medium text-white backdrop-blur-sm">
                   <Eye className="h-4 w-4 shrink-0" /> กระพริบตาเพื่อยืนยันว่าเป็นคนจริง ก่อนเช็คอิน
                 </div>

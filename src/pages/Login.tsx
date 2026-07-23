@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -8,15 +8,26 @@ import { Label } from '@/components/ui/label'
 import { Loader2, AlertTriangle, ShieldCheck, Camera } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
-import { loadFaceModels, detectFaceWithDescriptor, descriptorDistance, MATCH_THRESHOLD } from '@/lib/faceEngine'
-import { describeGetUserMediaError } from '@/lib/cameraHelpers'
+import { useFaceCamera, type TickResult } from '@/hooks/useFaceCamera'
 import type { Member } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-type CameraState = 'idle' | 'loading' | 'ready' | 'error'
-type OverlayBox = { box: { x: number; y: number; width: number; height: number }; color: string; label: string } | null
+const MODEL_LOAD_ERROR_MESSAGE =
+  'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ กรุณาใช้ "เข้าสู่ระบบด้วยรหัสบุคลากร" ด้านล่างแทน หรือลองใหม่อีกครั้ง'
 
-const SCAN_INTERVAL_MS = 500
+// Tick policy (see CONTEXT.md "Tick policy"), split out as a pure function
+// so it's testable without a DOM/video element. Display-only by design —
+// this screen never acts on a match (see the note on Login below), so
+// unlike FaceScanner/MeetingScanner there's no streak/liveness state to
+// track, just a direct relabel of whatever the engine detected this tick.
+export function describeRecognition(result: TickResult<Member> | null) {
+  if (!result) return null
+  return {
+    box: result.face.box,
+    color: result.isMatch ? '#10b981' : '#f59e0b',
+    label: result.isMatch ? result.bestMatch!.candidate.name : 'ไม่รู้จัก',
+  }
+}
 
 // Face-scan is now purely a live recognition display, NOT a login
 // mechanism — it draws a box around whatever face is in frame and labels
@@ -35,94 +46,24 @@ export default function Login() {
 
   const registeredMembers = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
 
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const timerRef = useRef<number | null>(null)
-  const paintRafRef = useRef<number | null>(null)
-  const overlayRef = useRef<OverlayBox>(null)
-
-  const [cameraState, setCameraState] = useState<CameraState>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
   const [matchedName, setMatchedName] = useState<string | null>(null)
   const [manualId, setManualId] = useState('')
   const [manualError, setManualError] = useState('')
 
-  const paintLoop = useCallback(() => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (video && canvas && video.readyState >= 2 && video.videoWidth > 0) {
-      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-      }
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.save()
-        ctx.translate(canvas.width, 0)
-        ctx.scale(-1, 1)
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const overlay = overlayRef.current
-        if (overlay) {
-          ctx.strokeStyle = overlay.color
-          ctx.lineWidth = 4
-          ctx.strokeRect(overlay.box.x, overlay.box.y, overlay.box.width, overlay.box.height)
-        }
-        ctx.restore()
-
-        if (overlay) {
-          const { box, color, label } = overlay
-          const mirroredX = canvas.width - box.x - box.width
-          ctx.font = '600 20px "IBM Plex Sans Thai", "IBM Plex Sans", sans-serif'
-          const textWidth = ctx.measureText(label).width
-          ctx.fillStyle = color
-          ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)
-          ctx.fillStyle = '#ffffff'
-          ctx.fillText(label, mirroredX + 6, box.y - 11)
-        }
-      }
-    }
-    paintRafRef.current = requestAnimationFrame(paintLoop)
-  }, [])
-
-  const startCamera = useCallback(async () => {
-    setCameraState('loading')
-    setErrorMsg('')
-    try {
-      await loadFaceModels()
-    } catch {
-      setErrorMsg(
-        'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ กรุณาใช้ "เข้าสู่ระบบด้วยรหัสบุคลากร" ด้านล่างแทน หรือลองใหม่อีกครั้ง'
-      )
-      setCameraState('error')
-      return
-    }
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
-      setCameraState('ready')
-    } catch (err) {
-      setErrorMsg(describeGetUserMediaError(err))
-      setCameraState('error')
-    }
-  }, [])
-
-  const stopCamera = useCallback(() => {
-    if (timerRef.current) window.clearInterval(timerRef.current)
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-  }, [])
+  // Live recognition only — matches against every registered member (not
+  // just admins, since this no longer gates login) and just relabels the
+  // overlay. Never triggers completeLogin; a match here is purely display.
+  const camera = useFaceCamera({
+    candidates: registeredMembers,
+    modelLoadErrorMessage: MODEL_LOAD_ERROR_MESSAGE,
+    onTick: describeRecognition,
+  })
 
   // The only entry point left that actually logs anyone in — called from
   // handleManualLogin below. Face-scan matches never reach this function
   // anymore; they only ever update the on-screen overlay.
   function completeLogin(member: Member) {
-    stopCamera()
+    camera.stop()
     setMatchedName(member.name)
     loginAsAdmin(member)
     toast.success(`เข้าสู่ระบบสำเร็จ: ${member.name}`)
@@ -134,53 +75,10 @@ export default function Login() {
   }
 
   useEffect(() => {
-    startCamera()
-    paintRafRef.current = requestAnimationFrame(paintLoop)
-    return () => {
-      if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current)
-      stopCamera()
-    }
+    camera.start()
+    return () => camera.stop()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  // Live recognition only — matches against every registered member (not
-  // just admins, since this no longer gates login) and just updates the
-  // overlay the paint loop draws. Never calls completeLogin.
-  useEffect(() => {
-    if (cameraState !== 'ready') return
-    timerRef.current = window.setInterval(async () => {
-      const video = videoRef.current
-      if (!video || video.readyState < 2) return
-      let result
-      try {
-        result = await detectFaceWithDescriptor(video)
-      } catch {
-        return
-      }
-      if (!result) {
-        overlayRef.current = null
-        return
-      }
-
-      let best: { member: Member; distance: number } | null = null
-      for (const m of registeredMembers) {
-        if (!m.faceDescriptor) continue
-        const distance = descriptorDistance(result.descriptor, m.faceDescriptor)
-        if (!best || distance < best.distance) best = { member: m, distance }
-      }
-
-      const isMatch = best && best.distance < MATCH_THRESHOLD
-      overlayRef.current = {
-        box: result.box,
-        color: isMatch ? '#10b981' : '#f59e0b',
-        label: isMatch ? best!.member.name : 'ไม่รู้จัก',
-      }
-    }, SCAN_INTERVAL_MS)
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraState, registeredMembers])
 
   function handleManualLogin() {
     setManualError('')
@@ -279,31 +177,31 @@ export default function Login() {
           </CardHeader>
           <CardContent>
             <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-2xl border border-accent/20 bg-slate-900">
-              {cameraState === 'loading' && (
+              {camera.cameraState === 'loading' && (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-white/80">
                   <Loader2 className="h-7 w-7 animate-spin" />
                   <p className="text-sm">กำลังเตรียมกล้องและโมเดลตรวจจับใบหน้า...</p>
                 </div>
               )}
-              {cameraState === 'error' && (
+              {camera.cameraState === 'error' && (
                 <div className="flex h-full flex-col items-center justify-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
                   <AlertTriangle className="h-8 w-8 shrink-0 text-amber-400" />
-                  <p className="max-w-sm text-sm leading-relaxed text-white/80">{errorMsg}</p>
-                  <Button size="lg" variant="secondary" onClick={() => startCamera()} className="mt-1 shrink-0 gap-1.5">
+                  <p className="max-w-sm text-sm leading-relaxed text-white/80">{camera.errorMsg}</p>
+                  <Button size="lg" variant="secondary" onClick={() => camera.start()} className="mt-1 shrink-0 gap-1.5">
                     <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
                   </Button>
                 </div>
               )}
               <video
-                ref={videoRef}
+                ref={camera.videoRef}
                 muted
                 playsInline
                 webkit-playsinline="true"
                 className="absolute -left-full -top-full h-px w-px opacity-0"
               />
               <canvas
-                ref={canvasRef}
-                className={cn('h-full w-full object-cover', (cameraState === 'loading' || cameraState === 'error') && 'hidden')}
+                ref={camera.canvasRef}
+                className={cn('h-full w-full object-cover', (camera.cameraState === 'loading' || camera.cameraState === 'error') && 'hidden')}
               />
             </div>
             {registeredMembers.length === 0 && (
