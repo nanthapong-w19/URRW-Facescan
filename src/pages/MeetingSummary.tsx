@@ -236,28 +236,32 @@ export default function MeetingSummary() {
   const participants = useMemo(() => meeting?.participants ?? [], [meeting])
   // Live feed for the "เช็คอินล่าสุด" card up top — driven straight off the
   // same realtime `checkins` state the rest of this page uses (see the
-  // postgres_changes subscription above), newest first, capped to the 10
-  // most recent so the card doesn't grow unbounded over a long meeting.
-  // Older check-ins just drop off this card's view — `checkins` itself
-  // (used for the present/absent stats below) still keeps every record.
+  // postgres_changes subscription above), newest first. Windowed mode caps
+  // this at 10 so the card doesn't grow unbounded over a long meeting;
+  // fullscreen mode (projected on a meeting-room screen, scrollable card —
+  // see recentCheckinsCard below) shows everyone who's checked in instead,
+  // since dropping the 11th+ person off a fullscreen roster reads as a bug
+  // ("where did they go?"), not the intended "recent" trimming. `checkins`
+  // itself (used for the present/absent stats below) always keeps every
+  // record regardless of this cap.
   const recentCheckins = useMemo(() => {
     const participantsById = new Map(participants.map((p) => [p.memberId, p]))
-    return [...checkins]
-      .sort((a, b) => new Date(b.checkedInAt).getTime() - new Date(a.checkedInAt).getTime())
-      .slice(0, 10)
-      .map((c) => {
-        const p = participantsById.get(c.memberId)
-        return {
-          id: c.id,
-          name: p?.name ?? 'ไม่ทราบชื่อผู้เข้าร่วม',
-          department: p?.department ?? '',
-          position: p?.position ?? '',
-          method: c.method,
-          time: formatCheckinTime(c.checkedInAt),
-          photoUrl: c.photoUrl,
-        }
-      })
-  }, [checkins, participants])
+    const sorted = [...checkins].sort(
+      (a, b) => new Date(b.checkedInAt).getTime() - new Date(a.checkedInAt).getTime()
+    )
+    return (isFullscreen ? sorted : sorted.slice(0, 10)).map((c) => {
+      const p = participantsById.get(c.memberId)
+      return {
+        id: c.id,
+        name: p?.name ?? 'ไม่ทราบชื่อผู้เข้าร่วม',
+        department: p?.department ?? '',
+        position: p?.position ?? '',
+        method: c.method,
+        time: formatCheckinTime(c.checkedInAt),
+        photoUrl: c.photoUrl,
+      }
+    })
+  }, [checkins, participants, isFullscreen])
   const presentParticipants = useMemo(
     () => participants.filter((p) => checkinByMember.has(p.memberId)),
     [participants, checkinByMember]
@@ -304,111 +308,183 @@ export default function MeetingSummary() {
     )
   }
 
+  // Recent-checkins card is reused as-is in both layouts; only its
+  // placement (standalone vs. sharing a row with the attendance cards)
+  // changes between windowed and fullscreen mode, so it's built once here
+  // rather than duplicated in each branch below.
+  // Fullscreen: card fills its grid cell edge-to-edge (h-full flex column,
+  // list grows via flex-1) instead of the fixed max-h-[50vh] windowed mode
+  // uses, so its height tracks whatever the fullscreen viewport actually
+  // leaves available rather than a guessed constant.
+  const recentCheckinsCard = (
+    <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex h-full flex-col')}>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <div>
+          <CardTitle className="font-display flex items-center gap-2 text-base">
+            <UserCheck className="h-4 w-4 text-primary" /> เช็คอินล่าสุด
+          </CardTitle>
+          <CardDescription>ผู้เช็คอินเข้าประชุมล่าสุด</CardDescription>
+        </div>
+        <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+          <PulseDot />
+          LIVE
+        </span>
+      </CardHeader>
+      <CardContent className={cn(isFullscreen && 'min-h-0 flex-1 overflow-y-auto')}>
+        {recentCheckins.length === 0 ? (
+          <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">ยังไม่มีผู้เช็คอิน</p>
+        ) : (
+          // Windowed mode: the ul itself owns the fixed max-height + scroll,
+          // so the card doesn't keep growing taller with every new check-in
+          // (up to the 10-item cap). Fullscreen mode: CardContent above is
+          // already the scroll owner (flex-1 min-h-0 overflow-y-auto) — the
+          // ul just flows inside it without its own height/overflow, since
+          // nesting two overflow-y-auto boxes here produced a double
+          // scrollbar (inner one always empty/inert because it exactly
+          // matched its parent's size) instead of one that actually scrolls.
+          <ul className={cn('divide-y divide-border/70', isFullscreen ? '' : 'max-h-80 overflow-y-auto')}>
+            {recentCheckins.map((c, i) => (
+              <li key={c.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                <CheckinIdentity
+                  name={c.name}
+                  position={c.position}
+                  department={c.department}
+                  photo={c.photoUrl}
+                  highlightRing={i === 0}
+                />
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <CheckinMethodBadge method={c.method} manualLabel="เช็คอินด้วยรหัส" />
+                  <span className="text-xs text-muted-foreground">{c.time}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  )
+
+  // In fullscreen these two stack in a column beside the check-ins card
+  // (see the grid below) and must fill it edge-to-edge, so each Card grows
+  // via flex-1 rather than sizing to its own content — otherwise the column
+  // stretches to match the check-ins card's height but leaves dead space
+  // below the two (shorter, content-sized) cards instead of the pair
+  // summing to that height. Windowed mode ignores these classes since that
+  // layout puts the two cards side-by-side, each sized to its own content.
+  const attendanceDonutCard = (
+    <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex min-h-0 flex-1 flex-col')}>
+      <CardHeader>
+        <CardTitle className="font-display text-base">อัตราเข้าประชุม</CardTitle>
+        <CardDescription>สัดส่วนบุคลากรที่เข้าร่วมประชุม</CardDescription>
+      </CardHeader>
+      <CardContent className={cn('flex items-center justify-center pb-8', isFullscreen && 'flex-1')}>
+        <AttendanceDonut percent={attendanceRate} label="เข้าร่วมประชุม" />
+      </CardContent>
+    </Card>
+  )
+
+  const departmentCard = (
+    <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex min-h-0 flex-1 flex-col')}>
+      <CardHeader>
+        <CardTitle className="font-display text-base">กลุ่มสาระการเรียนรู้</CardTitle>
+        <CardDescription>เปรียบเทียบผู้เข้าร่วมและผู้ไม่เข้าร่วมของแต่ละกลุ่มสาระการเรียนรู้</CardDescription>
+      </CardHeader>
+      <CardContent className={cn(isFullscreen && 'min-h-0 flex-1 overflow-y-auto')}>
+        <DepartmentAttendanceChart data={departmentAttendance} />
+      </CardContent>
+    </Card>
+  )
+
+  const titleBlock = (
+    <div>
+      <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">สรุปข้อมูลการประชุม</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{meeting.title}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <CalendarDays className="h-3.5 w-3.5" /> {formatMeetingDate(meeting.meetingTime)}
+        </span>
+        {meeting.location && (
+          <span className="flex items-center gap-1">
+            <MapPin className="h-3.5 w-3.5" /> {meeting.location}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div
       ref={containerRef}
       className={cn(
         'mx-auto space-y-6',
-        isFullscreen ? 'h-full max-w-none overflow-y-auto bg-background p-6 sm:p-10' : 'max-w-3xl'
+        // fixed+z-50 overlay (same pattern as MeetingDetail.tsx) covers the
+        // navbar and back button regardless of whether the native Fullscreen
+        // API actually engaged, since containerRef only wraps this page's
+        // content — the navbar is a DOM sibling further up in App.tsx, so
+        // native fullscreen alone wouldn't reliably hide it on every device.
+        isFullscreen ? 'fixed inset-0 z-50 max-w-none overflow-y-auto bg-background p-6 sm:p-10' : 'max-w-3xl'
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <Button asChild variant="ghost" size="sm" className="-ms-2 gap-1.5">
-          <Link to={`/meetings/${id}`}>
-            <ArrowLeft className="h-3.5 w-3.5" /> กลับไปหน้าการประชุม
-          </Link>
-        </Button>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={toggleFullscreen}>
-          {isFullscreen ? (
-            <>
-              <Minimize2 className="h-3.5 w-3.5" /> ออกจากโหมดเต็มจอ
-            </>
-          ) : (
-            <>
-              <Maximize2 className="h-3.5 w-3.5" /> โหมดเต็มจอ
-            </>
-          )}
-        </Button>
-      </div>
-
-      <div>
-        <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">สรุปข้อมูลการประชุม</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{meeting.title}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <CalendarDays className="h-3.5 w-3.5" /> {formatMeetingDate(meeting.meetingTime)}
-          </span>
-          {meeting.location && (
-            <span className="flex items-center gap-1">
-              <MapPin className="h-3.5 w-3.5" /> {meeting.location}
-            </span>
-          )}
+      {!isFullscreen && (
+        <div className="flex items-center justify-between gap-2">
+          <Button asChild variant="ghost" size="sm" className="-ms-2 gap-1.5">
+            <Link to={`/meetings/${id}`}>
+              <ArrowLeft className="h-3.5 w-3.5" /> กลับไปหน้าการประชุม
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={toggleFullscreen}>
+            <Maximize2 className="h-3.5 w-3.5" /> โหมดเต็มจอ
+          </Button>
         </div>
-      </div>
+      )}
 
-      <Card className="border-border/70 shadow-soft">
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-          <div>
-            <CardTitle className="font-display flex items-center gap-2 text-base">
-              <UserCheck className="h-4 w-4 text-primary" /> เช็คอินล่าสุด
-            </CardTitle>
-            <CardDescription>ผู้เช็คอินเข้าประชุมล่าสุด</CardDescription>
+      {isFullscreen ? (
+        // Fullscreen: title + the three cards are boxed into exactly one
+        // device screen (height = viewport minus the container's own
+        // vertical padding, see p-6/sm:p-10 above) so they're all visible
+        // without scrolling on load — the grid row gets flex-1 to soak up
+        // whatever's left under the title, and each card fills that row
+        // (see the h-full/flex-1 classes on the card consts above). This
+        // MUST be a fixed height (h-*), not min-h-* — min-h- is only a
+        // floor, so it never stopped a long check-in list from growing the
+        // whole wrapper (and the check-in card with it) taller than one
+        // screen; h-* is a ceiling the flex children are forced to shrink
+        // within, which is what actually makes the card's own overflow
+        // scroll instead of the card itself expanding. The stat tiles and
+        // detail panels stay below, in normal scrolling flow.
+        <div className="flex h-[calc(100dvh-3rem)] flex-col gap-4 sm:h-[calc(100dvh-5rem)]">
+          {titleBlock}
+          {/* grid-rows-[minmax(0,1fr)] instead of the default 'auto' row —
+              an 'auto' row floors at its tallest item's max-content size, so
+              once check-ins fill past the cap the row (and everything
+              below it) would grow to fit them all instead of clipping.
+              minmax(0,1fr) removes that floor, so the row is exactly the
+              leftover space and each card's own overflow-y-auto scrolls
+              past it as intended. min-h-0 on this grid and both column divs
+              stops the same content-based floor from re-appearing one level
+              up (flex/grid items default to min-height:auto, i.e. their
+              content's size, unless min-h-0 overrides it). */}
+          <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-4 lg:grid-cols-3">
+            <div className="min-h-0 lg:col-span-2">{recentCheckinsCard}</div>
+            {participants.length > 0 && (
+              <div className="flex h-full min-h-0 flex-col gap-4 lg:col-span-1">
+                {attendanceDonutCard}
+                {departmentCard}
+              </div>
+            )}
           </div>
-          <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-            <PulseDot />
-            LIVE
-          </span>
-        </CardHeader>
-        <CardContent>
-          {recentCheckins.length === 0 ? (
-            <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">ยังไม่มีผู้เช็คอิน</p>
-          ) : (
-            // Fixed max-height + scroll — without this, the card kept
-            // growing taller with every new check-in (up to the 10-item
-            // cap) instead of staying a stable size on screen.
-            <ul className={cn('divide-y divide-border/70 overflow-y-auto', isFullscreen ? 'max-h-[50vh]' : 'max-h-80')}>
-              {recentCheckins.map((c, i) => (
-                <li key={c.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <CheckinIdentity
-                    name={c.name}
-                    position={c.position}
-                    department={c.department}
-                    photo={c.photoUrl}
-                    highlightRing={i === 0}
-                  />
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <CheckinMethodBadge method={c.method} manualLabel="เช็คอินด้วยรหัส" />
-                    <span className="text-xs text-muted-foreground">{c.time}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      {participants.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <Card className="border-border/70 shadow-soft lg:col-span-1">
-            <CardHeader>
-              <CardTitle className="font-display text-base">อัตราเข้าประชุม</CardTitle>
-              <CardDescription>สัดส่วนบุคลากรที่เข้าร่วมประชุม</CardDescription>
-            </CardHeader>
-            <CardContent className="flex items-center justify-center pb-8">
-              <AttendanceDonut percent={attendanceRate} label="เข้าร่วมประชุม" />
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70 shadow-soft lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="font-display text-base">แยกตามกลุ่มสาระการเรียนรู้</CardTitle>
-              <CardDescription>เปรียบเทียบผู้เข้าร่วมและผู้ไม่เข้าร่วมของแต่ละกลุ่มสาระการเรียนรู้</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DepartmentAttendanceChart data={departmentAttendance} />
-            </CardContent>
-          </Card>
         </div>
+      ) : (
+        <>
+          {titleBlock}
+          {recentCheckinsCard}
+          {participants.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div className="lg:col-span-1">{attendanceDonutCard}</div>
+              <div className="lg:col-span-2">{departmentCard}</div>
+            </div>
+          )}
+        </>
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -555,6 +631,14 @@ export default function MeetingSummary() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {isFullscreen && (
+        <div className="flex justify-center pt-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={toggleFullscreen}>
+            <Minimize2 className="h-3.5 w-3.5" /> ออกจากโหมดเต็มจอ
+          </Button>
+        </div>
       )}
     </div>
   )
