@@ -7,6 +7,9 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { LoadingState } from '@/components/ui/loading-state'
 import { InitialsAvatar } from '@/components/ui/initials-avatar'
+import { PulseDot } from '@/components/PulseDot'
+import { CheckinMethodBadge } from '@/components/CheckinMethodBadge'
+import { CheckinIdentity } from '@/components/CheckinIdentity'
 import {
   ArrowLeft,
   CalendarDays,
@@ -192,6 +195,7 @@ export default function MeetingSummary() {
           id: c.id,
           name: p?.name ?? 'ไม่ทราบชื่อผู้เข้าร่วม',
           department: p?.department ?? '',
+          position: p?.position ?? '',
           method: c.method,
           time: formatCheckinTime(c.checkedInAt),
           photoUrl: c.photoUrl,
@@ -295,10 +299,7 @@ export default function MeetingSummary() {
             <CardDescription>ผู้เช็คอินเข้าประชุมล่าสุด</CardDescription>
           </div>
           <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            </span>
+            <PulseDot />
             LIVE
           </span>
         </CardHeader>
@@ -312,28 +313,15 @@ export default function MeetingSummary() {
             <ul className={cn('divide-y divide-border/70 overflow-y-auto', isFullscreen ? 'max-h-[50vh]' : 'max-h-80')}>
               {recentCheckins.map((c, i) => (
                 <li key={c.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <InitialsAvatar
-                      name={c.name}
-                      photo={c.photoUrl}
-                      className={cn(i === 0 && 'ring-2 ring-emerald-500/60')}
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{c.department}</p>
-                    </div>
-                  </div>
+                  <CheckinIdentity
+                    name={c.name}
+                    position={c.position}
+                    department={c.department}
+                    photo={c.photoUrl}
+                    highlightRing={i === 0}
+                  />
                   <div className="flex shrink-0 flex-col items-end gap-1">
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'gap-1 border-none text-xs font-normal',
-                        c.method === 'face' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-                      )}
-                    >
-                      <CircleCheck className="h-3 w-3" />
-                      {c.method === 'face' ? 'สแกนใบหน้า' : 'เช็คอินด้วยรหัส'}
-                    </Badge>
+                    <CheckinMethodBadge method={c.method} manualLabel="เช็คอินด้วยรหัส" />
                     <span className="text-xs text-muted-foreground">{c.time}</span>
                   </div>
                 </li>
@@ -426,16 +414,7 @@ export default function MeetingSummary() {
                           </div>
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-1">
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              'gap-1 border-none text-xs font-normal',
-                              checkin.method === 'face' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-                            )}
-                          >
-                            <CircleCheck className="h-3 w-3" />
-                            {checkin.method === 'face' ? 'สแกนใบหน้า' : 'เช็คอินด้วยรหัส'}
-                          </Badge>
+                          <CheckinMethodBadge method={checkin.method} manualLabel="เช็คอินด้วยรหัส" />
                           <span className="text-xs text-muted-foreground">{formatCheckinTime(checkin.checkedInAt)}</span>
                         </div>
                       </li>

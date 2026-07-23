@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
-import { InitialsAvatar } from '@/components/ui/initials-avatar'
+import { PulseDot } from '@/components/PulseDot'
+import { CheckinMethodBadge } from '@/components/CheckinMethodBadge'
+import { CheckinIdentity } from '@/components/CheckinIdentity'
 import { useAppData } from '@/hooks/useAppData'
 import { todaysCheckins } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -141,10 +143,7 @@ export default function Dashboard() {
               <CardDescription>อัปเดตแบบเรียลไทม์เมื่อมีการเช็คอินใหม่</CardDescription>
             </div>
             <Badge variant="secondary" className="gap-1 font-normal">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              </span>
+              <PulseDot />
               Live
             </Badge>
           </CardHeader>
@@ -161,26 +160,9 @@ export default function Dashboard() {
               <ul className="divide-y divide-border/70">
                 {recent.map((c) => (
                   <li key={c.id} className="flex items-center justify-between gap-2 py-3 first:pt-0 last:pb-0 sm:gap-3">
-                    <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-                      <InitialsAvatar name={c.name} variant="soft" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">{c.department}</p>
-                      </div>
-                    </div>
+                    <CheckinIdentity name={c.name} position={c.position} department={c.department} avatarVariant="soft" />
                     <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'hidden gap-1 border-none text-xs font-normal sm:inline-flex',
-                          c.method === 'face'
-                            ? 'bg-primary/10 text-primary'
-                            : 'bg-muted text-muted-foreground'
-                        )}
-                      >
-                        <CircleCheck className="h-3 w-3" />
-                        {c.method === 'face' ? 'สแกนใบหน้า' : 'เช็คอินด้วยตนเอง'}
-                      </Badge>
+                      <CheckinMethodBadge method={c.method} className="hidden sm:inline-flex" />
                       <CircleCheck
                         className={cn(
                           'h-4 w-4 shrink-0 sm:hidden',

@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Users, CalendarDays, ShieldCheck, LogIn, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { PulseDot } from '@/components/PulseDot'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { cn } from '@/lib/utils'
 
@@ -66,10 +67,7 @@ export default function Navbar() {
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <div className="hidden items-center gap-2 sm:flex">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-            </span>
+            <PulseDot size="md" />
             <span className="text-xs font-medium text-muted-foreground">ระบบพร้อมใช้งาน</span>
           </div>
 

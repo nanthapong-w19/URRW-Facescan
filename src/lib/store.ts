@@ -54,6 +54,7 @@ function rowToCheckin(row: CheckinRow): CheckinRecord {
     memberId: row.member_id,
     name: row.facein_members?.name ?? 'ไม่ทราบชื่อ',
     department: row.facein_members?.department ?? '',
+    position: row.facein_members?.position ?? '',
     time: row.checked_in_at,
     method: row.method,
     confidence: row.confidence ?? undefined,
@@ -157,7 +158,7 @@ export async function getMemberPhotos(): Promise<Record<string, string | null>> 
 export async function getCheckins(): Promise<CheckinRecord[]> {
   const { data, error } = await supabase
     .from('facein_checkins')
-    .select('*, facein_members(name, department)')
+    .select('*, facein_members(name, department, position)')
     .order('checked_in_at', { ascending: false })
     .limit(CHECKINS_FETCH_LIMIT)
   if (error) throw new Error(describeDbError(error))
@@ -224,14 +225,14 @@ export async function registerFace(id: string, descriptor: number[], photo: stri
 }
 
 export async function recordCheckin(
-  member: Pick<Member, 'id' | 'name' | 'department'>,
+  member: Pick<Member, 'id' | 'name' | 'department' | 'position'>,
   method: CheckinMethod,
   confidence?: number
 ): Promise<CheckinRecord> {
   const { data, error } = await supabase
     .from('facein_checkins')
     .insert({ member_id: member.id, method, confidence: confidence ?? null })
-    .select('*, facein_members(name, department)')
+    .select('*, facein_members(name, department, position)')
     .single()
   if (error) throw new Error(describeDbError(error))
   return rowToCheckin(data as unknown as CheckinRow)

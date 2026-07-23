@@ -59,6 +59,7 @@ export function applyCheckinEvent(
     memberId: row.member_id,
     name: member?.name ?? 'ไม่ทราบชื่อ',
     department: member?.department ?? '',
+    position: member?.position ?? '',
     time: row.checked_in_at,
     method: row.method,
     confidence: row.confidence ?? undefined,

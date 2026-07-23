@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { LoadingState } from '@/components/ui/loading-state'
-import { CalendarDays, Users, Plus, MapPin, CalendarClock, CheckCircle2 } from 'lucide-react'
+import { CalendarDays, Users, Plus, CalendarClock, CheckCircle2 } from 'lucide-react'
 import { getMeetings } from '@/lib/store'
 import { useAdminAuth } from '@/lib/adminAuth'
+import { MeetingRoomBadge } from '@/components/MeetingRoomBadge'
 import type { Meeting } from '@/lib/types'
 
 // checkedInCount/participants.length as a percentage, shown per meeting
@@ -104,11 +105,7 @@ export default function MeetingList() {
                     <CardDescription className="flex items-center gap-1.5 text-xs">
                       <CalendarDays className="h-3.5 w-3.5" /> {formatMeetingTime(meeting.meetingTime)}
                     </CardDescription>
-                    {meeting.location && (
-                      <CardDescription className="flex items-center gap-1.5 text-xs">
-                        <MapPin className="h-3.5 w-3.5" /> {meeting.location}
-                      </CardDescription>
-                    )}
+                    <MeetingRoomBadge room={meeting.location} className="w-fit" />
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex items-center justify-between gap-2">

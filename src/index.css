@@ -13,6 +13,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* sonner ships its own hardcoded system-font stack on [data-sonner-toaster],
+   which otherwise overrides IBM Plex Sans Thai for every toast — plain
+   toast.success/error/info included, not just custom content. !important is
+   required because sonner injects that rule via JS at mount time, after this
+   stylesheet; unlayered !important is the only thing guaranteed to still win. */
+[data-sonner-toaster] {
+  font-family: inherit !important;
+}
+
 @layer base {
   :root {
     /* Theme: เลือดหมู (deep maroon) - ขาว (white) - ทอง (gold) */
@@ -293,6 +302,25 @@
   .animate-login-success-pop,
   .animate-login-success-glow,
   .animate-login-success-text {
+    animation: none;
+  }
+}
+
+/* CheckinSuccessToast's dismiss-countdown bar — animation-duration is set
+   inline per-toast so it always matches that toast's actual sonner duration. */
+@keyframes toast-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.animate-toast-progress {
+  animation: toast-progress linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-toast-progress {
     animation: none;
   }
 }

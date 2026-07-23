@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { format } from 'date-fns'
+import { th } from 'date-fns/locale'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { PageHeader } from '@/components/ui/page-header'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -15,11 +19,73 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Users, CalendarPlus } from 'lucide-react'
+import { Search, Users, CalendarPlus, CalendarDays, Clock } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { createMeeting } from '@/lib/store'
 import { MEETING_ROOMS } from '@/lib/constants'
+
+// 24-hour "HH:mm" — the everyday Thai convention (no am/pm split).
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+
+// Typed date field uses the everyday Thai written format: "dd/MM/yyyy" with
+// a Buddhist-era year (yyyy = Gregorian + 543). Accepts 1-2 digit day/month
+// so "3/7/2569" works while typing, not just the zero-padded form.
+function parseThaiDateInput(text: string): Date | undefined {
+  const m = text.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (!m) return undefined
+  const day = Number(m[1])
+  const month = Number(m[2])
+  const yearAD = Number(m[3]) - 543
+  const date = new Date(yearAD, month - 1, day)
+  // Rejects overflow like 31/02 silently rolling into March.
+  if (date.getFullYear() !== yearAD || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined
+  return date
+}
+
+function formatThaiDateInput(date: Date): string {
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear() + 543}`
+}
+
+// Typed time field: plain 24-hour "H:mm" or "HH:mm".
+function parseTimeInput(text: string): string | undefined {
+  const m = text.trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
+  if (!m) return undefined
+  return `${m[1].padStart(2, '0')}:${m[2]}`
+}
+
+// Auto-inserts the group separator as digits are typed, e.g. "2307" ->
+// "23/07" -> keep typing -> "23/07/2569". `groupLengths` is each segment's
+// digit count (date: [2,2,4], time: [2,2]); a separator is appended right
+// after a non-last segment fills up, so typing never requires the user to
+// type "/" or ":" themselves.
+// Deleting the separator itself (backspace landing on it, character count
+// dropping but digit count unchanged) is treated as "delete the last digit
+// too" — otherwise backspace would appear to do nothing right after a "/".
+function autoFormatSegmented(raw: string, prevFormatted: string, groupLengths: number[], separator: string): string {
+  let digits = raw.replace(/\D/g, '')
+  if (raw.length < prevFormatted.length) {
+    const prevDigits = prevFormatted.replace(/\D/g, '')
+    if (digits.length === prevDigits.length && digits.length > 0) {
+      digits = digits.slice(0, -1)
+    }
+  }
+  const maxDigits = groupLengths.reduce((a, b) => a + b, 0)
+  digits = digits.slice(0, maxDigits)
+
+  let out = ''
+  let idx = 0
+  groupLengths.forEach((len, i) => {
+    if (digits.length <= idx) return
+    const isLast = i === groupLengths.length - 1
+    const chunk = digits.slice(idx, idx + len)
+    out += chunk
+    idx += len
+    if (!isLast && chunk.length === len) out += separator
+  })
+  return out
+}
 
 // Hidden system account — never shown, searchable, or selectable as a
 // meeting participant (not a real invitee, so it shouldn't appear in the
@@ -33,7 +99,12 @@ export default function CreateMeeting() {
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [meetingTime, setMeetingTime] = useState('')
+  const [meetingDate, setMeetingDate] = useState<Date | undefined>(undefined)
+  const [dateInputText, setDateInputText] = useState('')
+  const [datePickerOpen, setDatePickerOpen] = useState(false)
+  const [meetingTimeOfDay, setMeetingTimeOfDay] = useState('')
+  const [timeInputText, setTimeInputText] = useState('')
+  const [timePickerOpen, setTimePickerOpen] = useState(false)
   const [location, setLocation] = useState('')
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -88,10 +159,12 @@ export default function CreateMeeting() {
     }
     setSubmitting(true)
     try {
+      const meetingDateStr = meetingDate ? format(meetingDate, 'yyyy-MM-dd') : ''
+      const combinedMeetingTime = meetingDateStr ? `${meetingDateStr}T${meetingTimeOfDay || '00:00'}` : ''
       const meeting = await createMeeting({
         title: title.trim(),
         description: description.trim(),
-        meetingTime: meetingTime ? new Date(meetingTime).toISOString() : null,
+        meetingTime: combinedMeetingTime ? new Date(combinedMeetingTime).toISOString() : null,
         location: location.trim(),
         createdByMemberId: admin.id,
         createdByName: admin.name,
@@ -122,10 +195,179 @@ export default function CreateMeeting() {
             <Label htmlFor="meeting-title">ชื่อการประชุม *</Label>
             <Input id="meeting-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น ประชุมกลุ่มสาระฯ ประจำเดือน" />
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label htmlFor="meeting-time">วันและเวลา</Label>
-              <Input id="meeting-time" type="datetime-local" value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} />
+              <Label htmlFor="meeting-date">วันที่ประชุม</Label>
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                <PopoverAnchor asChild>
+                  <div className="relative">
+                    <Input
+                      id="meeting-date"
+                      value={dateInputText}
+                      onChange={(e) => {
+                        const formatted = autoFormatSegmented(e.target.value, dateInputText, [2, 2, 4], '/')
+                        setDateInputText(formatted)
+                        if (!formatted.trim()) {
+                          setMeetingDate(undefined)
+                          return
+                        }
+                        const parsed = parseThaiDateInput(formatted)
+                        if (parsed) setMeetingDate(parsed)
+                      }}
+                      onBlur={() => {
+                        if (!dateInputText.trim()) {
+                          setMeetingDate(undefined)
+                          return
+                        }
+                        const parsed = parseThaiDateInput(dateInputText)
+                        if (parsed) {
+                          setMeetingDate(parsed)
+                          setDateInputText(formatThaiDateInput(parsed))
+                        } else {
+                          setDateInputText(meetingDate ? formatThaiDateInput(meetingDate) : '')
+                        }
+                      }}
+                      placeholder="วว/ดด/ปปปป (พ.ศ.)"
+                      inputMode="numeric"
+                      maxLength={10}
+                      className="pe-9"
+                    />
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute end-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground"
+                      >
+                        <CalendarDays className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                  </div>
+                </PopoverAnchor>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    locale={th}
+                    selected={meetingDate}
+                    onSelect={(date) => {
+                      setMeetingDate(date)
+                      setDateInputText(date ? formatThaiDateInput(date) : '')
+                      setDatePickerOpen(false)
+                    }}
+                    formatters={{
+                      formatCaption: (date) =>
+                        new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' }).format(
+                          date
+                        ),
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="meeting-time-of-day">เวลาที่เริ่มประชุม</Label>
+              <Popover open={timePickerOpen} onOpenChange={setTimePickerOpen}>
+                <PopoverAnchor asChild>
+                  <div className="relative">
+                    <Input
+                      id="meeting-time-of-day"
+                      value={timeInputText}
+                      onChange={(e) => {
+                        const formatted = autoFormatSegmented(e.target.value, timeInputText, [2, 2], ':')
+                        setTimeInputText(formatted)
+                        if (!formatted.trim()) {
+                          setMeetingTimeOfDay('')
+                          return
+                        }
+                        const parsed = parseTimeInput(formatted)
+                        if (parsed) setMeetingTimeOfDay(parsed)
+                      }}
+                      onBlur={() => {
+                        if (!timeInputText.trim()) {
+                          setMeetingTimeOfDay('')
+                          return
+                        }
+                        const parsed = parseTimeInput(timeInputText)
+                        if (parsed) {
+                          setMeetingTimeOfDay(parsed)
+                          setTimeInputText(parsed)
+                        } else {
+                          setTimeInputText(meetingTimeOfDay)
+                        }
+                      }}
+                      placeholder="ชม:นาที เช่น 09:30"
+                      inputMode="numeric"
+                      maxLength={5}
+                      className="pe-9"
+                    />
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute end-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground"
+                      >
+                        <Clock className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                  </div>
+                </PopoverAnchor>
+                <PopoverContent className="w-auto p-3" align="start">
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={meetingTimeOfDay ? meetingTimeOfDay.split(':')[0] : undefined}
+                      onValueChange={(hour) => {
+                        const minute = meetingTimeOfDay ? meetingTimeOfDay.split(':')[1] : '00'
+                        const next = `${hour}:${minute}`
+                        setMeetingTimeOfDay(next)
+                        setTimeInputText(next)
+                      }}
+                    >
+                      <SelectTrigger className="w-20">
+                        <SelectValue placeholder="ชม." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {HOURS.map((h) => (
+                          <SelectItem key={h} value={h}>
+                            {h}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-muted-foreground">:</span>
+                    <Select
+                      value={meetingTimeOfDay ? meetingTimeOfDay.split(':')[1] : undefined}
+                      onValueChange={(minute) => {
+                        const hour = meetingTimeOfDay ? meetingTimeOfDay.split(':')[0] : '00'
+                        const next = `${hour}:${minute}`
+                        setMeetingTimeOfDay(next)
+                        setTimeInputText(next)
+                      }}
+                    >
+                      <SelectTrigger className="w-20">
+                        <SelectValue placeholder="นาที" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {MINUTES.map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {m}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-sm text-muted-foreground">น.</span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="mt-3 w-full"
+                    disabled={!meetingTimeOfDay}
+                    onClick={() => setTimePickerOpen(false)}
+                  >
+                    ตกลง
+                  </Button>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="meeting-location">สถานที่</Label>

@@ -25,6 +25,7 @@ export interface CheckinRecord {
   memberId: string
   name: string
   department: string
+  position: string
   time: string // ISO timestamp
   method: CheckinMethod
   confidence?: number // similarity score for face match (0-1)
@@ -68,7 +69,7 @@ export interface CheckinRow {
   checked_in_at: string
   method: CheckinMethod
   confidence: number | null
-  facein_members: { name: string; department: string } | null
+  facein_members: { name: string; department: string; position: string } | null
 }
 
 // Shape of a raw `facein_checkins` row as delivered by a Realtime

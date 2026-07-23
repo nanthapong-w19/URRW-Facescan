@@ -10,6 +10,9 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { LoadingState } from '@/components/ui/loading-state'
 import { InitialsAvatar } from '@/components/ui/initials-avatar'
+import { CheckinSuccessToast } from '@/components/CheckinSuccessToast'
+import { PulseDot } from '@/components/PulseDot'
+import { CheckinIdentity } from '@/components/CheckinIdentity'
 import {
   Select,
   SelectContent,
@@ -46,6 +49,7 @@ import { describeGetUserMediaError } from '@/lib/cameraHelpers'
 import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
 import type { RealtimeChange } from '@/lib/realtimeSync'
 import { MEETING_ROOMS } from '@/lib/constants'
+import { MeetingRoomBadge } from '@/components/MeetingRoomBadge'
 import type { Meeting, MeetingCheckin, MeetingCheckinRow, MeetingParticipant } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -112,7 +116,7 @@ function playSuccessChime() {
 }
 
 type CameraState = 'idle' | 'loading' | 'ready' | 'error'
-type ScanFeedback = { name: string; department: string } | null
+type ScanFeedback = { name: string; department: string; position: string; method: 'face' | 'manual' } | null
 
 const SCAN_INTERVAL_MS = 500
 const REPEAT_COOLDOWN_MS = 15000
@@ -279,7 +283,9 @@ export default function MeetingDetail() {
     try {
       const record = await recordMeetingCheckin(id, participant.memberId, method, confidence, photoUrl)
       setCheckins((prev) => [...prev, record])
-      toast.success(`เช็คอินสำเร็จ: ${participant.name}`, { duration: 3500 })
+      // No toast.success here — MeetingScanner shows its own in-tree
+      // CheckinSuccessToast popup for both face and manual check-ins, which
+      // (unlike a toast) stays visible while the scanner is in fullscreen.
       playSuccessChime()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'เช็คอินไม่สำเร็จ')
@@ -456,7 +462,11 @@ export default function MeetingDetail() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">สถานที่</p>
-                  <p className="truncate text-sm font-semibold text-foreground">{meeting.location || 'ไม่ระบุ'}</p>
+                  {meeting.location ? (
+                    <MeetingRoomBadge room={meeting.location} className="mt-0.5" />
+                  ) : (
+                    <p className="truncate text-sm font-semibold text-foreground">ไม่ระบุ</p>
+                  )}
                 </div>
               </button>
             )}
@@ -740,6 +750,7 @@ function MeetingScanner({
           id: c.id,
           name: p?.name ?? 'ไม่ทราบชื่อผู้เข้าร่วม',
           department: p?.department ?? '',
+          position: p?.position ?? '',
           time: formatCheckinTime(c.checkedInAt),
           photoUrl: c.photoUrl,
         }
@@ -937,7 +948,7 @@ function MeetingScanner({
           lastMatchRef.current[participant.memberId] = Date.now()
           const snapshot = canvasRef.current ? captureFaceSnapshot(canvasRef.current, result.box) : null
           onMatch(participant, distance, snapshot ?? undefined)
-          setFeedback({ name: participant.name, department: participant.department })
+          setFeedback({ name: participant.name, department: participant.department, position: participant.position, method: 'face' })
           matchStreakRef.current = { memberId: null, since: 0 }
           setConfirmProgress(0)
           window.setTimeout(() => setFeedback(null), 3200)
@@ -1036,11 +1047,20 @@ function MeetingScanner({
               )}
 
               {feedback && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-emerald-600/90 text-white backdrop-blur-sm animate-in fade-in zoom-in-95">
-                  <CheckCircle2 className="h-14 w-14" />
-                  <p className="font-display text-xl font-bold">เช็คอินสำเร็จ</p>
-                  <p className="text-lg">{feedback.name}</p>
-                  <p className="text-sm text-white/80">{feedback.department}</p>
+                // Plain overlay (not a sonner toast) deliberately — this box IS
+                // `containerRef`'s subtree, i.e. the element that actually goes
+                // fullscreen, whereas <Toaster/> is mounted at the app root and
+                // becomes invisible once the native Fullscreen API is active on
+                // a *different* element. A toast.custom() here would silently
+                // never be seen on a fullscreen kiosk display.
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in">
+                  <CheckinSuccessToast
+                    name={feedback.name}
+                    department={feedback.department}
+                    position={feedback.position}
+                    method={feedback.method}
+                    durationMs={3200}
+                  />
                 </div>
               )}
             </div>
@@ -1068,7 +1088,21 @@ function MeetingScanner({
               <ManualMeetingCheckin
                 participants={participants}
                 checkedInIds={checkedInIds}
-                onCheckin={onManualCheckin}
+                onCheckin={(participant, photoUrl) => {
+                  // Optimistic, same as the face-match path above — shows
+                  // immediately rather than waiting on the parent's async
+                  // recordMeetingCheckin, and (crucially) renders inside this
+                  // component's own containerRef subtree so it's actually
+                  // visible in fullscreen kiosk mode, unlike a toast would be.
+                  setFeedback({
+                    name: participant.name,
+                    department: participant.department,
+                    position: participant.position,
+                    method: 'manual',
+                  })
+                  window.setTimeout(() => setFeedback(null), 3200)
+                  onManualCheckin(participant, photoUrl)
+                }}
                 isFullscreen={isFullscreen}
                 capturePhoto={() =>
                   cameraState === 'ready' && canvasRef.current
@@ -1089,10 +1123,7 @@ function MeetingScanner({
                   </p>
                   {isFullscreen && (
                     <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      </span>
+                      <PulseDot />
                       LIVE
                     </span>
                   )}
@@ -1112,21 +1143,15 @@ function MeetingScanner({
                         i === 0 && 'border-emerald-500/60'
                       )}
                     >
-                      <InitialsAvatar name={r.name} photo={r.photoUrl}>
-                        <CheckCircle2
-                          className={cn(
-                            'absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full text-emerald-500',
-                            isFullscreen ? 'bg-white' : 'bg-card'
-                          )}
-                        />
-                      </InitialsAvatar>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{r.name}</p>
-                        <p className={cn('truncate text-xs', isFullscreen ? 'text-slate-500' : 'text-muted-foreground')}>
-                          {r.department ? `${r.department} · ` : ''}
-                          {r.time}
-                        </p>
-                      </div>
+                      <CheckinIdentity
+                        name={r.name}
+                        position={r.position}
+                        department={r.department}
+                        photo={r.photoUrl}
+                        checkOverlay
+                        theme={isFullscreen ? 'fullscreen' : 'default'}
+                        subtitleSuffix={r.time}
+                      />
                     </div>
                   ))
                 )}

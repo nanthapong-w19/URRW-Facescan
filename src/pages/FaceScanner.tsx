@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
+import { CheckinSuccessToast } from '@/components/CheckinSuccessToast'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,7 +42,7 @@ import type { Member } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type CameraState = 'idle' | 'loading' | 'ready' | 'error'
-type ScanFeedback = { kind: 'success' | 'unknown'; name?: string; department?: string } | null
+type ScanFeedback = { kind: 'success' | 'unknown'; name?: string; department?: string; position?: string } | null
 type OverlayBox = { box: { x: number; y: number; width: number; height: number }; color: string; label: string } | null
 
 // Plays a short, pleasant two-tone chime using the Web Audio API so no
@@ -322,9 +323,20 @@ export default function FaceScanner() {
           lastCheckinRef.current[member.id] = Date.now()
           try {
             await recordCheckin(member, 'face', distanceToConfidence(best!.distance))
-            setFeedback({ kind: 'success', name: member.name, department: member.department })
+            setFeedback({ kind: 'success', name: member.name, department: member.department, position: member.position })
             playSuccessChime()
-            toast.success(`เช็คอินสำเร็จ: ${member.name}`, { duration: 3500 })
+            toast.custom(
+              () => (
+                <CheckinSuccessToast
+                  name={member.name}
+                  department={member.department}
+                  position={member.position}
+                  method="face"
+                  durationMs={3500}
+                />
+              ),
+              { duration: 3500 }
+            )
             window.setTimeout(() => setFeedback(null), 3200)
           } catch (err) {
             // Allow retrying on the next tick instead of getting stuck
@@ -357,7 +369,18 @@ export default function FaceScanner() {
     }
     try {
       await recordCheckin(member, 'manual')
-      toast.success(`เช็คอินสำเร็จ (Manual): ${member.name}`)
+      toast.custom(
+        () => (
+          <CheckinSuccessToast
+            name={member.name}
+            department={member.department}
+            position={member.position}
+            method="manual"
+            durationMs={3500}
+          />
+        ),
+        { duration: 3500 }
+      )
       playSuccessChime()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'บันทึกการเช็คอินไม่สำเร็จ')
@@ -479,7 +502,9 @@ export default function FaceScanner() {
                   <CheckCircle2 className="h-14 w-14" />
                   <p className="font-display text-2xl font-bold">เช็คอินสำเร็จ</p>
                   <p className="text-lg">{feedback.name}</p>
-                  <p className="text-sm text-white/80">{feedback.department}</p>
+                  <p className="text-sm text-white/80">
+                    {[feedback.position, feedback.department].filter(Boolean).join(' · ')}
+                  </p>
                 </div>
               )}
             </div>
