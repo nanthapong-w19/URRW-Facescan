@@ -1,42 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Loader2, AlertTriangle, ShieldCheck, Camera } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
-import { useFaceCamera, type TickResult } from '@/hooks/useFaceCamera'
 import type { Member } from '@/lib/types'
-import { cn } from '@/lib/utils'
 
-const MODEL_LOAD_ERROR_MESSAGE =
-  'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ กรุณาใช้ "เข้าสู่ระบบด้วยรหัสบุคลากร" ด้านล่างแทน หรือลองใหม่อีกครั้ง'
-
-// Tick policy (see CONTEXT.md "Tick policy"), split out as a pure function
-// so it's testable without a DOM/video element. Display-only by design —
-// this screen never acts on a match (see the note on Login below), so
-// unlike FaceScanner/MeetingScanner there's no streak/liveness state to
-// track, just a direct relabel of whatever the engine detected this tick.
-export function describeRecognition(result: TickResult<Member> | null) {
-  if (!result) return null
-  return {
-    box: result.face.box,
-    color: result.isMatch ? '#10b981' : '#f59e0b',
-    label: result.isMatch ? result.bestMatch!.candidate.name : 'ไม่รู้จัก',
-  }
-}
-
-// Face-scan is now purely a live recognition display, NOT a login
-// mechanism — it draws a box around whatever face is in frame and labels
-// it with the matched member's name (any registered member, not just
-// admins), or "ไม่รู้จัก" if nothing matches. It never signs anyone in and
-// never navigates away on its own. The only way to actually log in is the
-// manual employee-ID form below, which still records a session (see
-// lib/adminAuth.tsx) and requires role === 'admin' or 'viewer' — plain
-// 'user' members have no login access.
+// Face-scan camera removed from this page per request — the manual
+// employee-ID form below is now the only way to log in. It still records a
+// session (see lib/adminAuth.tsx) and requires role === 'admin' or
+// 'viewer' — plain 'user' members have no login access.
 export default function Login() {
   const { members } = useAppData()
   const { loginAsAdmin } = useAdminAuth()
@@ -44,26 +20,11 @@ export default function Login() {
   const location = useLocation()
   const redirectTo = (location.state as { from?: string } | null)?.from ?? '/meetings'
 
-  const registeredMembers = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
-
   const [matchedName, setMatchedName] = useState<string | null>(null)
   const [manualId, setManualId] = useState('')
   const [manualError, setManualError] = useState('')
 
-  // Live recognition only — matches against every registered member (not
-  // just admins, since this no longer gates login) and just relabels the
-  // overlay. Never triggers completeLogin; a match here is purely display.
-  const camera = useFaceCamera({
-    candidates: registeredMembers,
-    modelLoadErrorMessage: MODEL_LOAD_ERROR_MESSAGE,
-    onTick: describeRecognition,
-  })
-
-  // The only entry point left that actually logs anyone in — called from
-  // handleManualLogin below. Face-scan matches never reach this function
-  // anymore; they only ever update the on-screen overlay.
   function completeLogin(member: Member) {
-    camera.stop()
     setMatchedName(member.name)
     loginAsAdmin(member)
     toast.success(`เข้าสู่ระบบสำเร็จ: ${member.name}`)
@@ -73,12 +34,6 @@ export default function Login() {
     // route actually changes.
     window.setTimeout(() => navigate(redirectTo, { replace: true }), 1300)
   }
-
-  useEffect(() => {
-    camera.start()
-    return () => camera.stop()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   function handleManualLogin() {
     setManualError('')
@@ -170,62 +125,16 @@ export default function Login() {
                 tracking-tight is appropriate here (unlike the Thai headings
                 elsewhere — see round 31's notes on why Thai text had it
                 removed). */}
-            <CardTitle className="font-display animate-gradient-move bg-gradient-to-r from-primary via-[hsl(350_58%_38%)] to-accent bg-[length:200%_auto] bg-clip-text text-3xl font-bold tracking-tight text-transparent drop-shadow-[0_2px_3px_rgba(0,0,0,0.18)] sm:text-4xl">
+            <CardTitle className="font-brand animate-gradient-move bg-gradient-to-r from-primary via-[hsl(350_58%_38%)] to-accent bg-[length:200%_auto] bg-clip-text text-4xl font-extrabold tracking-tight text-transparent drop-shadow-[0_2px_3px_rgba(0,0,0,0.18)] sm:text-5xl">
               FaceIn
             </CardTitle>
-            <CardDescription className="text-center">ระบบเช็คอินราชกัญญาฯ ด้วยเทคโนโลยีจดจำใบหน้า</CardDescription>
+            <CardDescription className="text-center">ระบบเช็คอินราชกัญญาฯ</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-2xl border border-accent/20 bg-slate-900">
-              {camera.cameraState === 'loading' && (
-                <div className="flex h-full flex-col items-center justify-center gap-2 text-white/80">
-                  <Loader2 className="h-7 w-7 animate-spin" />
-                  <p className="text-sm">กำลังเตรียมกล้องและโมเดลตรวจจับใบหน้า...</p>
-                </div>
-              )}
-              {camera.cameraState === 'error' && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
-                  <AlertTriangle className="h-8 w-8 shrink-0 text-amber-400" />
-                  <p className="max-w-sm text-sm leading-relaxed text-white/80">{camera.errorMsg}</p>
-                  <Button size="lg" variant="secondary" onClick={() => camera.start()} className="mt-1 shrink-0 gap-1.5">
-                    <Camera className="h-3.5 w-3.5" /> ลองอีกครั้ง
-                  </Button>
-                </div>
-              )}
-              <video
-                ref={camera.videoRef}
-                muted
-                playsInline
-                webkit-playsinline="true"
-                className="absolute -left-full -top-full h-px w-px opacity-0"
-              />
-              <canvas
-                ref={camera.canvasRef}
-                className={cn('h-full w-full object-cover', (camera.cameraState === 'loading' || camera.cameraState === 'error') && 'hidden')}
-              />
-            </div>
-            {registeredMembers.length === 0 && (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                ยังไม่มีบุคลากรที่ลงทะเบียนใบหน้าไว้ กล้องจะขึ้น &quot;ไม่รู้จัก&quot; สำหรับทุกคนจนกว่าจะลงทะเบียนใบหน้าไว้ที่หน้า
-                &quot;บุคลากร&quot;
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="w-full border-border/70 bg-card/[0.97] shadow-lift backdrop-blur-sm">
-          {/* No more separate CardHeader — "เข้าสู่ระบบด้วยรหัสผู้ดูแล" now
-              sits directly as the input's own label instead of a title
-              block above it, so the card opens straight into the field
-              with a tight label-to-input gap rather than a full header's
-              worth of spacing. */}
-          <CardContent className="space-y-3 pt-4 sm:pt-5">
+          <CardContent className="space-y-3">
             <div className="space-y-1">
-              <Label htmlFor="manual-id" className="font-display text-sm font-medium text-foreground">
-                เข้าสู่ระบบด้วยรหัสผู้ดูแล
-              </Label>
               <Input
                 id="manual-id"
+                aria-label="เข้าสู่ระบบด้วยรหัสผู้ดูแล"
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleManualLogin()}
@@ -237,11 +146,19 @@ export default function Login() {
                 // 16px min font size — anything smaller makes iOS Safari
                 // zoom the whole page in on focus, which is jarring on a
                 // screen that's meant to work smoothly on any device.
-                className="text-base"
+                className="text-center text-base"
               />
             </div>
             {manualError && <p className="text-xs text-destructive">{manualError}</p>}
-            <Button size="lg" onClick={handleManualLogin} className="w-full">
+            <Button
+              size="lg"
+              onClick={handleManualLogin}
+              // เลือดหมู-ทอง hover sweep, applied directly here since this
+              // page is deliberately excluded from the shared .themed-pages
+              // hover treatment in index.css (Login uses its own bespoke
+              // maroon/gold styling for its Card/Button elements).
+              className="w-full bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(350_55%_22%)_55%,hsl(var(--accent))_140%)] bg-[length:180%_180%] bg-[position:0%_0%] transition-[background-position] duration-500 hover:bg-[position:100%_100%]"
+            >
               เข้าสู่ระบบ
             </Button>
           </CardContent>

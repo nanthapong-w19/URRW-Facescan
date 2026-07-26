@@ -13,6 +13,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Blern: the "FaceIn" wordmark's own display face (navbar + login card
+   title only) — deliberately separate from .font-display (Prompt), since
+   Blern is Latin-only and .font-display also carries Thai headings
+   elsewhere that still need Prompt's Thai glyph coverage. */
+@font-face {
+  font-family: 'Blern';
+  src: url('./assets/fonts/Blern-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* sonner ships its own hardcoded system-font stack on [data-sonner-toaster],
    which otherwise overrides IBM Plex Sans Thai for every toast — plain
    toast.success/error/info included, not just custom content. !important is
@@ -124,6 +136,9 @@
 @layer utilities {
   .font-display {
     font-family: 'Prompt', 'IBM Plex Sans Thai', ui-sans-serif, system-ui, sans-serif;
+  }
+  .font-brand {
+    font-family: 'Blern', 'Prompt', ui-sans-serif, system-ui, sans-serif;
   }
 }
 
