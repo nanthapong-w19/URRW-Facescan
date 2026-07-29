@@ -48,7 +48,7 @@ const DETECTOR_OPTIONS = new faceapi.TinyFaceDetectorOptions({
 })
 
 export async function detectFaceWithDescriptor(
-  input: HTMLVideoElement
+  input: HTMLVideoElement | HTMLImageElement
 ): Promise<DetectedFace | null> {
   const result = await faceapi
     .detectSingleFace(input, DETECTOR_OPTIONS)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { ScanFace, Loader2, CheckCircle2, AlertTriangle, RotateCcw, SwitchCamera, ShieldAlert } from 'lucide-react'
+import { ScanFace, Loader2, CheckCircle2, AlertTriangle, RotateCcw, SwitchCamera, ShieldAlert, ImagePlus } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCameraStream } from '@/hooks/useCameraStream'
 import { detectFaceWithDescriptor } from '@/lib/faceEngine'
@@ -17,9 +17,35 @@ interface FaceCaptureDialogProps {
 const MODEL_LOAD_ERROR_MESSAGE =
   'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ (อาจเกิดจากข้อจำกัดเครือข่ายในหน้าตัวอย่างนี้) กรุณารันโปรเจกต์นี้ภายนอกเพื่อใช้งานกล้องจริง หรือใช้การเช็คอินแบบ Manual แทน'
 
+// Crops the uploaded photo down to the detected face box (plus a margin so
+// the crop doesn't hug the jawline/hairline too tightly), matching the
+// tight framing of a live camera capture instead of storing the whole
+// uploaded photo.
+function cropFaceToDataUrl(
+  img: HTMLImageElement,
+  box: { x: number; y: number; width: number; height: number }
+): string {
+  const paddingX = box.width * 0.4
+  const paddingY = box.height * 0.4
+  const cropX = Math.max(0, box.x - paddingX)
+  const cropY = Math.max(0, box.y - paddingY)
+  const cropWidth = Math.min(img.naturalWidth - cropX, box.width + paddingX * 2)
+  const cropHeight = Math.min(img.naturalHeight - cropY, box.height + paddingY * 2)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = cropWidth
+  canvas.height = cropHeight
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight)
+  }
+  return canvas.toDataURL('image/jpeg', 0.85)
+}
+
 export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCaptured }: FaceCaptureDialogProps) {
   const camera = useCameraStream({ modelLoadErrorMessage: MODEL_LOAD_ERROR_MESSAGE })
   const detectRafRef = useRef<number | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [captureErrorMsg, setCaptureErrorMsg] = useState('')
   const [captured, setCaptured] = useState<{ descriptor: number[]; photo: string } | null>(null)
@@ -82,6 +108,37 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
       ctx.drawImage(video, 0, 0)
     }
     const photo = snapCanvas.toDataURL('image/jpeg', 0.85)
+    setCaptured({ descriptor: Array.from(result.descriptor), photo })
+    if (detectRafRef.current) cancelAnimationFrame(detectRafRef.current)
+    camera.stop()
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+
+    const img = new Image()
+    img.src = dataUrl
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = reject
+    })
+
+    const result = await detectFaceWithDescriptor(img)
+    if (!result) {
+      setCaptureErrorMsg('ไม่พบใบหน้าในรูปภาพนี้ กรุณาเลือกรูปภาพอื่นที่เห็นใบหน้าชัดเจน')
+      return
+    }
+    setCaptureErrorMsg('')
+    const photo = cropFaceToDataUrl(img, result.box)
     setCaptured({ descriptor: Array.from(result.descriptor), photo })
     if (detectRafRef.current) cancelAnimationFrame(detectRafRef.current)
     camera.stop()
@@ -212,9 +269,21 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
 
         <DialogFooter className="gap-2 sm:justify-center">
           {scanning && (
-            <Button onClick={handleCapture} disabled={!faceDetected} className="gap-1.5">
-              <ScanFace className="h-4 w-4" /> ถ่ายภาพและบันทึก
-            </Button>
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-1.5">
+                <ImagePlus className="h-4 w-4" /> เพิ่มรูปภาพ
+              </Button>
+              <Button onClick={handleCapture} disabled={!faceDetected} className="gap-1.5">
+                <ScanFace className="h-4 w-4" /> ถ่ายภาพและบันทึก
+              </Button>
+            </>
           )}
           {captured && (
             <>
