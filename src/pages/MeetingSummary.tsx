@@ -380,7 +380,7 @@ export default function MeetingSummary() {
       <CardHeader className={cn(isFullscreen && 'space-y-0.5 p-3 pb-2')}>
         <CardTitle className="font-display text-base">กลุ่มสาระการเรียนรู้</CardTitle>
         <CardDescription className={cn(isFullscreen && 'text-xs')}>
-          {isFullscreen ? 'เปรียบเทียบผู้เข้าของแต่ละกลุ่มสาระการเรียนรู้' : 'เปรียบเทียบผู้เข้าร่วมและผู้ไม่เข้าร่วมของแต่ละกลุ่มสาระการเรียนรู้'}
+          {isFullscreen ? 'เปรียบเทียบผู้เข้าร่วมประชุมแต่ละกลุ่มสาระการเรียนรู้' : 'เปรียบเทียบผู้เข้าร่วมและผู้ไม่เข้าร่วมของแต่ละกลุ่มสาระการเรียนรู้'}
         </CardDescription>
       </CardHeader>
       <CardContent className={cn('flex-1', isFullscreen && 'min-h-0 overflow-y-auto p-3 pt-0')}>
