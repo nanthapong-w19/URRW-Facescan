@@ -24,7 +24,7 @@ export default function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-primary/15 bg-background/80 shadow-[0_1px_0_hsl(var(--accent)/0.25)] backdrop-blur-md">
+    <header className="sticky top-0 z-40 border-b border-primary/15 bg-background shadow-[0_1px_0_hsl(var(--accent)/0.25)]">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-3 sm:gap-3 sm:px-6 lg:px-8">
         <div className="flex min-w-0 shrink items-center gap-2 sm:gap-2.5">
           <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-9 w-9 shrink-0 object-contain sm:h-10 sm:w-10" />

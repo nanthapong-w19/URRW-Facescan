@@ -23,7 +23,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { PageHeader } from '@/components/ui/page-header'
 import { InitialsAvatar } from '@/components/ui/initials-avatar'
 import {
   Select,
@@ -102,6 +101,11 @@ interface MemberFormState {
   role: MemberRole
 }
 
+// Hidden system accounts (super/viewer) — same idea as CreateMeeting.tsx's
+// HIDDEN_EMPLOYEE_IDS: kept out of the roster table entirely, but the
+// employeeId still exists in the DB and works fine to log in with.
+const HIDDEN_EMPLOYEE_IDS = ['superurrwnm', 'viewerurrwnm']
+
 const emptyForm: MemberFormState = {
   employeeId: '',
   name: '',
@@ -141,8 +145,7 @@ function SortableTableHead({ sortKey: key, activeKey, dir, onSort, children }: S
 export default function MemberList() {
   const { members } = useAppData()
   const [query, setQuery] = useState('')
-  const [deptFilter, setDeptFilter] = useState<string>('all')
-  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey | null>('employeeId')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const [formOpen, setFormOpen] = useState(false)
@@ -174,19 +177,19 @@ export default function MemberList() {
 
   const filtered = useMemo(() => {
     const result = members.filter((m) => {
-      const matchesQuery =
+      if (HIDDEN_EMPLOYEE_IDS.includes(m.employeeId.toLowerCase())) return false
+      return (
         !query ||
         m.name.toLowerCase().includes(query.toLowerCase()) ||
         m.employeeId.toLowerCase().includes(query.toLowerCase())
-      const matchesDept = deptFilter === 'all' || m.department === deptFilter
-      return matchesQuery && matchesDept
+      )
     })
     if (sortKey) {
       const dir = sortDir === 'asc' ? 1 : -1
       result.sort((a, b) => sortValue(a, sortKey).localeCompare(sortValue(b, sortKey), 'th') * dir)
     }
     return result
-  }, [members, query, deptFilter, sortKey, sortDir])
+  }, [members, query, sortKey, sortDir])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -264,21 +267,28 @@ export default function MemberList() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="จัดการบุคลากร"
-        description="เพิ่ม แก้ไข และลงทะเบียนใบหน้าให้บุคลากรในระบบ"
-        action={
-          <Button onClick={openAddForm} className="gap-1.5 shadow-soft">
-            <UserPlus className="h-4 w-4" /> เพิ่มบุคลากรใหม่
-          </Button>
-        }
+      {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/login, `fixed` so it
+          fills the viewport behind navbar/content regardless of scroll.
+          AppShell's own wrapper div (`bg-background`, App.tsx) is a plain
+          non-positioned block, which paints above negative-z-index
+          descendants no matter how deep they're nested — so `-z-10` here
+          got fully hidden behind it. Using `z-0` instead, paired with
+          `relative z-10` on the Card below, keeps the same visual
+          intent (backdrop behind content) without relying on stacking
+          order that AppShell silently defeats. */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0 animate-login-gradient bg-[linear-gradient(135deg,hsl(350_62%_10%)_0%,hsl(350_62%_24%)_28%,hsl(355_55%_34%)_48%,hsl(38_68%_38%)_62%,hsl(350_60%_16%)_80%,hsl(350_62%_10%)_100%)]"
+        aria-hidden
       />
-
-      <Card className="flex max-h-[70vh] flex-col border-border/70 shadow-soft">
+      <div
+        className="pointer-events-none fixed left-1/2 top-1/3 z-0 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
+        aria-hidden
+      />
+      <Card className="relative z-10 flex max-h-[70vh] flex-col border-border/70 shadow-soft">
         <CardHeader className="shrink-0 gap-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="font-display text-base">รายชื่อบุคลากร</CardTitle>
+              <CardTitle className="font-display text-base">ข้อมูลบุคลากร</CardTitle>
               <CardDescription>ทั้งหมด {filtered.length} คน</CardDescription>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -288,19 +298,9 @@ export default function MemberList() {
                 placeholder="ค้นหาชื่อ, รหัส"
                 className="w-full sm:w-64"
               />
-              <Select value={deptFilter} onValueChange={setDeptFilter}>
-                <SelectTrigger className="w-full sm:w-56">
-                  <SelectValue placeholder="กลุ่มสาระการเรียนรู้" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">ทุกกลุ่มสาระการเรียนรู้</SelectItem>
-                  {DEPARTMENTS.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Button onClick={openAddForm} className="gap-1.5 shadow-soft">
+                <UserPlus className="h-4 w-4" /> เพิ่มบุคลากรใหม่
+              </Button>
             </div>
           </div>
         </CardHeader>

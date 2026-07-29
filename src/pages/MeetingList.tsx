@@ -56,80 +56,90 @@ export default function MeetingList() {
 
   return (
     <div className="space-y-6">
-      {/* The "ออกจากระบบ" (logout) button that used to sit here was removed
-          by request (round 38) — the navbar already has its own logout
-          button whenever an admin session is active, so this page-level
-          duplicate was redundant. This header now only shows the page
-          title, who's logged in, and the "create meeting" action. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">การประชุม</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            เข้าสู่ระบบในฐานะ <span className="font-medium text-foreground">{admin?.name}</span>
-          </p>
+      {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/members (and
+          /#/login) — `fixed` so it fills the viewport regardless of
+          scroll. `z-0` here + `relative z-10` on the wrapper below (rather
+          than `-z-10`) because AppShell's own wrapper div (`bg-background`,
+          App.tsx) is a plain non-positioned block, which paints above
+          negative-z-index descendants no matter how deep they're nested. */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0 animate-login-gradient bg-[linear-gradient(135deg,hsl(350_62%_10%)_0%,hsl(350_62%_24%)_28%,hsl(355_55%_34%)_48%,hsl(38_68%_38%)_62%,hsl(350_60%_16%)_80%,hsl(350_62%_10%)_100%)]"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none fixed left-1/2 top-1/3 z-0 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
+        aria-hidden
+      />
+      <div className="relative z-10 space-y-6">
+        {/* The "ออกจากระบบ" (logout) button that used to sit here was removed
+            by request (round 38) — the navbar already has its own logout
+            button whenever an admin session is active. The title + "logged
+            in as" line was removed by request too, so this header now only
+            shows the "create meeting" action. */}
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <Button asChild size="sm" className="gap-1.5">
+                <Link to="/meetings/new">
+                  <Plus className="h-3.5 w-3.5" /> สร้างการประชุมใหม่
+                </Link>
+              </Button>
+            </div>
+          )}
         </div>
-        {isAdmin && (
-          <div className="flex items-center gap-2">
-            <Button asChild size="sm" className="gap-1.5">
-              <Link to="/meetings/new">
-                <Plus className="h-3.5 w-3.5" /> สร้างการประชุมใหม่
-              </Link>
-            </Button>
+
+        {loading ? (
+          <LoadingState label="กำลังโหลดรายการประชุม..." />
+        ) : meetings.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/70 bg-card p-10 text-center">
+            <CalendarClock className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">ยังไม่มีการประชุมที่สร้างไว้</p>
+            {isAdmin && (
+              <Button asChild size="sm" className="mt-2 gap-1.5">
+                <Link to="/meetings/new">
+                  <Plus className="h-3.5 w-3.5" /> สร้างการประชุมแรก
+                </Link>
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {meetings.map((meeting) => {
+              const attendance = attendanceRate(meeting)
+              return (
+                <Link key={meeting.id} to={isAdmin ? `/meetings/${meeting.id}` : `/meetings/${meeting.id}/summary`}>
+                  <Card className="h-full border-border/70 shadow-soft transition-shadow hover:shadow-lift">
+                    <CardHeader className="space-y-2">
+                      <CardTitle className="font-display line-clamp-2 text-base leading-snug">{meeting.title}</CardTitle>
+                      <CardDescription className="flex items-center gap-1.5 text-xs">
+                        <CalendarDays className="h-3.5 w-3.5" /> {formatMeetingTime(meeting.meetingTime)}
+                      </CardDescription>
+                      <MeetingRoomBadge room={meeting.location} className="w-fit" />
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant="secondary" className="shrink-0 gap-1 font-normal">
+                          <Users className="h-3 w-3" /> {meeting.participants.length} คน
+                        </Badge>
+                        <span className="min-w-0 truncate text-right text-xs text-muted-foreground">โดย {meeting.createdByName || 'ไม่ทราบ'}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-1 text-muted-foreground">
+                            <CheckCircle2 className="h-3 w-3" /> อัตราการเข้าประชุม
+                          </span>
+                          <span className="font-medium text-foreground">{attendance.label}</span>
+                        </div>
+                        <Progress value={attendance.percent} className="h-1.5" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              )
+            })}
           </div>
         )}
       </div>
-
-      {loading ? (
-        <LoadingState label="กำลังโหลดรายการประชุม..." />
-      ) : meetings.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/70 bg-card p-10 text-center">
-          <CalendarClock className="h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">ยังไม่มีการประชุมที่สร้างไว้</p>
-          {isAdmin && (
-            <Button asChild size="sm" className="mt-2 gap-1.5">
-              <Link to="/meetings/new">
-                <Plus className="h-3.5 w-3.5" /> สร้างการประชุมแรก
-              </Link>
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {meetings.map((meeting) => {
-            const attendance = attendanceRate(meeting)
-            return (
-              <Link key={meeting.id} to={isAdmin ? `/meetings/${meeting.id}` : `/meetings/${meeting.id}/summary`}>
-                <Card className="h-full border-border/70 shadow-soft transition-shadow hover:shadow-lift">
-                  <CardHeader className="space-y-2">
-                    <CardTitle className="font-display line-clamp-2 text-base leading-snug">{meeting.title}</CardTitle>
-                    <CardDescription className="flex items-center gap-1.5 text-xs">
-                      <CalendarDays className="h-3.5 w-3.5" /> {formatMeetingTime(meeting.meetingTime)}
-                    </CardDescription>
-                    <MeetingRoomBadge room={meeting.location} className="w-fit" />
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <Badge variant="secondary" className="shrink-0 gap-1 font-normal">
-                        <Users className="h-3 w-3" /> {meeting.participants.length} คน
-                      </Badge>
-                      <span className="min-w-0 truncate text-right text-xs text-muted-foreground">โดย {meeting.createdByName || 'ไม่ทราบ'}</span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <CheckCircle2 className="h-3 w-3" /> อัตราการเข้าประชุม
-                        </span>
-                        <span className="font-medium text-foreground">{attendance.label}</span>
-                      </div>
-                      <Progress value={attendance.percent} className="h-1.5" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }

@@ -165,7 +165,7 @@ export default function Login() {
         </Card>
 
         <p className="text-center text-[11px] leading-relaxed text-primary-foreground/50">
-          ระบบสงวนสิทธิ์การเข้าใช้งานเฉพาะผู้ดูแลระบบและผู้แสดงผลที่ได้รับอนุญาตเท่านั้น
+          ระบบใช้รหัสบุคลากรเดียวกับ bookmark เข้าใช้งาน
         </p>
       </div>
 

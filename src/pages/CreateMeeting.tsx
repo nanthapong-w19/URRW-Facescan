@@ -10,7 +10,6 @@ import { SearchInput } from '@/components/ui/search-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { PageHeader } from '@/components/ui/page-header'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -60,9 +59,11 @@ export default function CreateMeeting() {
   // be searched, selected, or swept in by "เลือกทั้งหมด".
   const members = useMemo(
     () =>
-      allMembers.filter(
-        (m) => !HIDDEN_EMPLOYEE_IDS.includes(m.employeeId.toLowerCase()) && m.role !== 'admin' && m.role !== 'viewer'
-      ),
+      allMembers
+        .filter(
+          (m) => !HIDDEN_EMPLOYEE_IDS.includes(m.employeeId.toLowerCase()) && m.role !== 'admin' && m.role !== 'viewer'
+        )
+        .sort((a, b) => a.employeeId.localeCompare(b.employeeId, 'th')),
     [allMembers]
   )
 
@@ -125,15 +126,26 @@ export default function CreateMeeting() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <PageHeader
-        title="สร้างการประชุมใหม่"
-        description="กรอกรายละเอียดและเลือกผู้เข้าร่วมจากรายชื่อสมาชิก"
+    <div>
+      {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/meetings (and
+          /#/members, /#/login) — `fixed` so it fills the viewport
+          regardless of scroll. `z-0` here + `relative z-10` on the
+          wrapper below (rather than `-z-10`) because AppShell's own
+          wrapper div (`bg-background`, App.tsx) is a plain non-positioned
+          block, which paints above negative-z-index descendants no
+          matter how deep they're nested. */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0 animate-login-gradient bg-[linear-gradient(135deg,hsl(350_62%_10%)_0%,hsl(350_62%_24%)_28%,hsl(355_55%_34%)_48%,hsl(38_68%_38%)_62%,hsl(350_60%_16%)_80%,hsl(350_62%_10%)_100%)]"
+        aria-hidden
       />
-
+      <div
+        className="pointer-events-none fixed left-1/2 top-1/3 z-0 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
+        aria-hidden
+      />
+      <div className="relative z-10 mx-auto max-w-3xl space-y-6">
       <Card className="border-border/70 shadow-soft">
         <CardHeader>
-          <CardTitle className="font-display text-base">รายละเอียดการประชุม</CardTitle>
+          <CardTitle className="font-display text-base">กรอกรายละเอียดการประชุม</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
@@ -341,7 +353,7 @@ export default function CreateMeeting() {
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <div>
             <CardTitle className="font-display flex items-center gap-2 text-base">
-              <Users className="h-4 w-4 text-primary" /> เลือกผู้เข้าร่วม
+              <Users className="h-4 w-4 text-primary" /> เลือกบุคลากรที่เข้าร่วม
             </CardTitle>
             <CardDescription>เลือกแล้ว {selectedIds.size} คน จากทั้งหมด {members.length} คน</CardDescription>
           </div>
@@ -394,6 +406,7 @@ export default function CreateMeeting() {
         <Button onClick={handleSubmit} isLoading={submitting} icon={<CalendarPlus className="h-4 w-4" />} className="gap-1.5">
           สร้างการประชุม
         </Button>
+      </div>
       </div>
     </div>
   )
