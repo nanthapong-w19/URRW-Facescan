@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   Loader2,
   Maximize2,
-  Minimize2,
   Users,
   KeyRound,
   Search,
@@ -31,6 +30,12 @@ import type { MeetingParticipant, MeetingCheckin } from '@/lib/types'
 import { cn, formatCheckinTime } from '@/lib/utils'
 
 type ScanFeedback = { name: string; department: string; position: string; method: 'face' | 'manual' } | null
+
+// How far the kiosk container has to be scrolled down before that counts as
+// the "pull down to exit fullscreen" gesture (see the scroll listener below)
+// — big enough that it can't fire from a stray touch/trackpad wobble while
+// someone's just reading the "เช็คอินล่าสุด" panel.
+const SCROLL_EXIT_THRESHOLD_PX = 80
 
 const REPEAT_COOLDOWN_MS = 15000
 // The same person must match continuously for this long before a check-in
@@ -278,6 +283,28 @@ export default function MeetingScanner({
     }
   }, [nativeFullscreen, manualFullscreen])
 
+  // Exit gesture for fullscreen kiosk mode: no "ย่อออกจากเต็มจอ" button is shown
+  // there anymore (see the CardHeader below) — someone walking up to a
+  // projector/TV shouldn't see an obvious tap target to back out of the
+  // kiosk mid-meeting, same reasoning as hiding "ปิดกล้อง". Instead,
+  // scrolling the container itself down past SCROLL_EXIT_THRESHOLD_PX exits.
+  // containerRef is the `overflow-y-auto` element (only while fullscreen —
+  // see its className below), so this listens for real user-driven scroll,
+  // not the nested "เช็คอินล่าสุด" list's own scrolling (the `scroll` event
+  // doesn't bubble, so that inner div's scroll never reaches this listener).
+  useEffect(() => {
+    if (!isFullscreen) return
+    const el = containerRef.current
+    if (!el) return
+    function handleScroll() {
+      if (el!.scrollTop > SCROLL_EXIT_THRESHOLD_PX) {
+        toggleFullscreen()
+      }
+    }
+    el.addEventListener('scroll', handleScroll)
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [isFullscreen, toggleFullscreen])
+
   return (
     // containerRef is the element that actually goes fullscreen (via the
     // Fullscreen API) when the button below is pressed. It wraps the header
@@ -285,7 +312,7 @@ export default function MeetingScanner({
     // the เปิด/ปิดกล้อง button stay reachable while fullscreened, on every
     // device (the `isFullscreen &&` classes are a CSS belt-and-braces fallback
     // for the rare case a browser's native fullscreen sizing doesn't kick in).
-    <div ref={containerRef} className={cn(isFullscreen && 'fixed inset-0 z-50 overflow-y-auto bg-background p-3 sm:p-4')}>
+    <div ref={containerRef} className={cn(isFullscreen && 'fixed inset-0 z-50 overflow-y-auto bg-background px-3 pb-3 sm:px-4 sm:pb-4')}>
       {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/meetings — only
           while fullscreen, since that's the only time this div becomes
           its own `fixed inset-0` box (i.e. a full page in its own right,
@@ -308,8 +335,8 @@ export default function MeetingScanner({
           />
         </>
       )}
-      <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex h-full min-h-0 flex-col border-none shadow-none')}>
-        <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
+      <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex h-full min-h-0 flex-col border-none bg-transparent shadow-none')}>
+        <CardHeader className={cn('flex shrink-0 flex-row flex-wrap items-center justify-between gap-2', isFullscreen && 'pt-0')}>
           {isFullscreen ? (
             // Kiosk branding instead of the admin-facing title/count —
             // same logo + wordmark treatment as Navbar.tsx, since this is
@@ -318,10 +345,10 @@ export default function MeetingScanner({
             <div className="flex min-w-0 items-center gap-2.5">
               <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-9 w-9 shrink-0 object-contain" />
               <div className="min-w-0 leading-tight">
-                <p className="font-brand animate-gradient-move truncate bg-gradient-to-r from-primary via-[hsl(350_65%_42%)] to-accent bg-[length:200%_auto] bg-clip-text text-xl font-extrabold tracking-tight text-transparent drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
+                <p className="font-brand animate-gradient-move truncate bg-gradient-to-r from-primary via-[hsl(350_65%_42%)] to-accent bg-[length:200%_auto] bg-clip-text text-3xl font-extrabold tracking-tight text-transparent drop-shadow-[0_2px_3px_rgba(0,0,0,0.35)] sm:text-4xl">
                   FaceIn
                 </p>
-                <p className="truncate text-[11px] text-muted-foreground">ระบบเช็คอินราชกัญญาฯ</p>
+                <p className="truncate text-[11px] text-primary-foreground/85 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.5))_drop-shadow(0_-1px_0_rgba(255,255,255,0.15))]">ระบบเช็คอินราชกัญญาฯ</p>
               </div>
             </div>
           ) : (
@@ -353,10 +380,15 @@ export default function MeetingScanner({
                 <Camera className="h-3.5 w-3.5" /> เปิดกล้อง
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={toggleFullscreen} className="shrink-0 gap-1.5">
-              {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-              {isFullscreen ? 'ย่อออกจากเต็มจอ' : 'โหมดเต็มจอ'}
-            </Button>
+            {/* No exit-fullscreen button by request — scrolling the kiosk
+                container down is the only way out once fullscreen (see the
+                scroll listener above the return statement), so this button
+                only ever needs to offer entering. */}
+            {!isFullscreen && (
+              <Button size="sm" variant="outline" onClick={toggleFullscreen} className="shrink-0 gap-1.5">
+                <Maximize2 className="h-3.5 w-3.5" /> โหมดเต็มจอ
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className={cn(isFullscreen && 'flex min-h-0 flex-1 flex-col')}>
