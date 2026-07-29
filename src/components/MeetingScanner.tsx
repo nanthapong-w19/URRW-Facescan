@@ -286,14 +286,52 @@ export default function MeetingScanner({
     // device (the `isFullscreen &&` classes are a CSS belt-and-braces fallback
     // for the rare case a browser's native fullscreen sizing doesn't kick in).
     <div ref={containerRef} className={cn(isFullscreen && 'fixed inset-0 z-50 overflow-y-auto bg-background p-3 sm:p-4')}>
+      {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/meetings — only
+          while fullscreen, since that's the only time this div becomes
+          its own `fixed inset-0` box (i.e. a full page in its own right,
+          layered above the navbar/app at z-50) rather than just an inline
+          section of MeetingDetail's page, which already has this backdrop
+          from its own wrapper. `-z-10` is safe here (unlike a plain page
+          wrapper) because this container is itself `fixed` + `z-50`,
+          which makes it a real stacking context — its own descendants'
+          negative z-index is scoped locally instead of racing
+          AppShell's bg-background further up the tree. */}
+      {isFullscreen && (
+        <>
+          <div
+            className="pointer-events-none fixed inset-0 -z-10 animate-login-gradient bg-[linear-gradient(135deg,hsl(350_62%_10%)_0%,hsl(350_62%_24%)_28%,hsl(355_55%_34%)_48%,hsl(38_68%_38%)_62%,hsl(350_60%_16%)_80%,hsl(350_62%_10%)_100%)]"
+            aria-hidden
+          />
+          <div
+            className="pointer-events-none fixed left-1/2 top-1/3 -z-10 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
+            aria-hidden
+          />
+        </>
+      )}
       <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex h-full min-h-0 flex-col border-none shadow-none')}>
         <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
-          <div>
-            <CardTitle className="font-display flex items-center gap-2 text-base">
-              <ScanFace className="h-4 w-4 text-primary" /> สแกนใบหน้าเพื่อเช็คอินเข้าร่วมประชุม
-            </CardTitle>
-            <CardDescription>รองรับผู้เข้าร่วมที่ลงทะเบียนใบหน้าแล้ว {registeredParticipants.length} คน</CardDescription>
-          </div>
+          {isFullscreen ? (
+            // Kiosk branding instead of the admin-facing title/count —
+            // same logo + wordmark treatment as Navbar.tsx, since this is
+            // what a visitor scanning in on a shared kiosk screen sees,
+            // not an admin managing the meeting.
+            <div className="flex min-w-0 items-center gap-2.5">
+              <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-9 w-9 shrink-0 object-contain" />
+              <div className="min-w-0 leading-tight">
+                <p className="font-brand animate-gradient-move truncate bg-gradient-to-r from-primary via-[hsl(350_65%_42%)] to-accent bg-[length:200%_auto] bg-clip-text text-xl font-extrabold tracking-tight text-transparent drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
+                  FaceIn
+                </p>
+                <p className="truncate text-[11px] text-muted-foreground">ระบบเช็คอินราชกัญญาฯ</p>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <CardTitle className="font-display flex items-center gap-2 text-base">
+                <ScanFace className="h-4 w-4 text-primary" /> สแกนใบหน้าเพื่อเช็คอินเข้าร่วมประชุม
+              </CardTitle>
+              <CardDescription>รองรับผู้เข้าร่วมที่ลงทะเบียนใบหน้าแล้ว {registeredParticipants.length} คน</CardDescription>
+            </div>
+          )}
           {/* flex-nowrap: these two buttons must always wrap together as one
               group (below the title, on narrow screens) rather than being
               free to separate from each other — otherwise one can end up on
@@ -301,9 +339,15 @@ export default function MeetingScanner({
               from view depending on scroll position. */}
           <div className="flex flex-nowrap items-center gap-2 shrink-0">
             {camera.cameraState === 'ready' ? (
-              <Button size="sm" variant="outline" onClick={camera.stop} className="shrink-0 gap-1.5">
-                <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
-              </Button>
+              // Hidden in fullscreen (kiosk display) by request — someone
+              // walking up to a projector/TV shouldn't be able to
+              // accidentally kill the scanner's camera mid-meeting; only
+              // "เปิดกล้อง" (recovery if the camera failed) stays reachable.
+              !isFullscreen && (
+                <Button size="sm" variant="outline" onClick={camera.stop} className="shrink-0 gap-1.5">
+                  <CameraOff className="h-3.5 w-3.5" /> ปิดกล้อง
+                </Button>
+              )
             ) : (
               <Button size="sm" variant="outline" onClick={() => camera.start()} className="shrink-0 gap-1.5">
                 <Camera className="h-3.5 w-3.5" /> เปิดกล้อง

@@ -229,6 +229,10 @@ export default function MeetingSummary() {
   const departmentAttendance = useMemo(() => {
     const byDept = new Map<string, { present: number; total: number }>()
     for (const p of participants) {
+      // ฝ่ายบริหาร (admin staff) is excluded from this breakdown by
+      // request — it's a small non-teaching group, not one of the actual
+      // learning-area groups this card is meant to compare.
+      if (p.department === 'ฝ่ายบริหาร') continue
       const entry = byDept.get(p.department) ?? { present: 0, total: 0 }
       entry.total += 1
       if (checkinByMember.has(p.memberId)) entry.present += 1
@@ -274,7 +278,7 @@ export default function MeetingSummary() {
           <CardTitle className="font-display flex items-center gap-2 text-base">
             <UserCheck className="h-4 w-4 text-primary" /> เช็คอินล่าสุด
           </CardTitle>
-          <CardDescription>ผู้เช็คอินเข้าประชุมล่าสุด</CardDescription>
+          <CardDescription className={cn(isFullscreen && 'text-xs')}>ผู้เช็คอินเข้าประชุมล่าสุด</CardDescription>
         </div>
         <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
           <PulseDot />
@@ -322,35 +326,88 @@ export default function MeetingSummary() {
   // below the two (shorter, content-sized) cards instead of the pair
   // summing to that height. Windowed mode ignores these classes since that
   // layout puts the two cards side-by-side, each sized to its own content.
+  // Fullscreen: this card is `flex-none` (sized to its own content, a fixed
+  // ~168px donut) rather than `flex-1` like departmentCard below — the
+  // donut's size doesn't scale with how many departments there are, so
+  // giving it an equal 50/50 split of the column just starved
+  // departmentCard of room it actually needs for a 8-10+ item grid,
+  // pushing it into overflow. Letting the donut take only what it needs and
+  // departmentCard absorb the rest fixes that ("การ์ดเดียวไม่ล้น" round).
+  // `h-full flex flex-col` on both cards (regardless of fullscreen) so they
+  // stretch to match each other's height instead of each sizing to its own
+  // content — windowed mode sits them side-by-side in the same CSS grid
+  // row, which stretches the wrapping <div>s to equal height by default,
+  // but the Card inside each div still needs `h-full` itself to actually
+  // consume that stretched height rather than staying content-sized.
+  // CardContent then gets `flex-1` so the extra room lands below its
+  // content (donut stays centered, department grid stays top-aligned)
+  // instead of stretching the border/header oddly.
   const attendanceDonutCard = (
-    <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex min-h-0 flex-1 flex-col')}>
+    <Card className={cn('flex flex-col border-border/70 shadow-soft', isFullscreen ? 'min-h-0 flex-none' : 'h-full')}>
       <CardHeader>
         <CardTitle className="font-display text-base">อัตราเข้าประชุม</CardTitle>
-        <CardDescription>สัดส่วนบุคลากรที่เข้าร่วมประชุม</CardDescription>
+        <CardDescription className={cn(isFullscreen && 'text-xs')}>สัดส่วนบุคลากรที่เข้าร่วมประชุม</CardDescription>
       </CardHeader>
-      <CardContent className={cn('flex items-center justify-center pb-8', isFullscreen && 'flex-1')}>
-        <AttendanceDonut percent={attendanceRate} label="เข้าร่วมประชุม" />
+      <CardContent className={cn('flex flex-1 items-center justify-center', isFullscreen ? 'pb-2' : 'pb-8')}>
+        {isFullscreen ? (
+          // Fullscreen: a horizontal gradient bar instead of the ring —
+          // same maroon->gold gradient language as the department tiles'
+          // bars, and a fraction of their vertical footprint, which is
+          // what this card and its neighboring "กลุ่มสาระการเรียนรู้" card
+          // were fighting over for room (see earlier "ครึ่งวงกลม" round —
+          // even a semicircle still cost more height than this does).
+          <div className="w-full">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-display text-2xl font-bold text-foreground">{attendanceRate}%</span>
+              <span className="text-xs text-muted-foreground">เข้าร่วมประชุม</span>
+            </div>
+            <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[hsl(350_62%_30%)] to-[hsl(43_74%_49%)] transition-[width] duration-500 ease-out"
+                style={{ width: `${attendanceRate}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <AttendanceDonut percent={attendanceRate} label="เข้าร่วมประชุม" />
+        )}
       </CardContent>
     </Card>
   )
 
   const departmentCard = (
-    <Card className={cn('border-border/70 shadow-soft', isFullscreen && 'flex min-h-0 flex-1 flex-col')}>
-      <CardHeader>
+    <Card className={cn('flex flex-col border-border/70 shadow-soft', isFullscreen ? 'min-h-0 flex-1' : 'h-full')}>
+      <CardHeader className={cn(isFullscreen && 'space-y-0.5 p-3 pb-2')}>
         <CardTitle className="font-display text-base">กลุ่มสาระการเรียนรู้</CardTitle>
-        <CardDescription>เปรียบเทียบผู้เข้าร่วมและผู้ไม่เข้าร่วมของแต่ละกลุ่มสาระการเรียนรู้</CardDescription>
+        <CardDescription className={cn(isFullscreen && 'text-xs')}>
+          {isFullscreen ? 'เปรียบเทียบผู้เข้าของแต่ละกลุ่มสาระการเรียนรู้' : 'เปรียบเทียบผู้เข้าร่วมและผู้ไม่เข้าร่วมของแต่ละกลุ่มสาระการเรียนรู้'}
+        </CardDescription>
       </CardHeader>
-      <CardContent className={cn(isFullscreen && 'min-h-0 flex-1 overflow-y-auto')}>
+      <CardContent className={cn('flex-1', isFullscreen && 'min-h-0 overflow-y-auto p-3 pt-0')}>
         <DepartmentAttendanceChart data={departmentAttendance} />
       </CardContent>
     </Card>
   )
 
+  // Sits directly on the animated backdrop (not inside a Card), so it
+  // needs the same light-on-dark treatment /#/login's own text uses
+  // (text-primary-foreground + drop-shadow) instead of the default dark
+  // text-foreground/text-muted-foreground, which is unreadable against
+  // the maroon gradient.
   const titleBlock = (
     <div>
-      <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">สรุปข้อมูลการประชุม</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{meeting.title}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      {/* Fullscreen (kiosk/projector display): lead with the meeting's
+          actual name as the big headline instead of the generic page
+          title — "สรุปข้อมูลการประชุม" moves down to a small kicker label
+          instead, since a viewer looking at this on a meeting-room screen
+          cares which meeting this is, not that it's a "summary" page. */}
+      <h1 className="font-display text-2xl font-bold text-primary-foreground drop-shadow-[0_1px_3px_rgba(0,0,0,0.35)] sm:text-3xl">
+        {isFullscreen ? meeting.title : 'สรุปข้อมูลการประชุม'}
+      </h1>
+      <p className="mt-1 text-sm text-primary-foreground/70 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
+        {isFullscreen ? meeting.description || 'ยังไม่มีรายละเอียดการประชุม' : meeting.title}
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-primary-foreground/70 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
         <span className="flex items-center gap-1">
           <CalendarDays className="h-3.5 w-3.5" /> {formatMeetingDate(meeting.meetingTime)}
         </span>
@@ -364,21 +421,66 @@ export default function MeetingSummary() {
   )
 
   return (
-    <div
-      ref={containerRef}
-      className={cn(
-        'mx-auto space-y-6',
-        // fixed+z-50 overlay (same pattern as MeetingDetail.tsx) covers the
-        // navbar and back button regardless of whether the native Fullscreen
-        // API actually engaged, since containerRef only wraps this page's
-        // content — the navbar is a DOM sibling further up in App.tsx, so
-        // native fullscreen alone wouldn't reliably hide it on every device.
-        isFullscreen ? 'fixed inset-0 z-50 max-w-none overflow-y-auto bg-background p-6 sm:p-10' : 'max-w-3xl'
+    <div>
+      {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/meetings — `z-0`
+          here + `relative z-10` on the wrapper below (rather than
+          `-z-10`) because AppShell's own wrapper div (`bg-background`,
+          App.tsx) is a plain non-positioned block, which paints above
+          negative-z-index descendants no matter how deep they're nested. */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0 animate-login-gradient bg-[linear-gradient(135deg,hsl(350_62%_10%)_0%,hsl(350_62%_24%)_28%,hsl(355_55%_34%)_48%,hsl(38_68%_38%)_62%,hsl(350_60%_16%)_80%,hsl(350_62%_10%)_100%)]"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none fixed left-1/2 top-1/3 z-0 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
+        aria-hidden
+      />
+      <div
+        ref={containerRef}
+        className={cn(
+          'relative z-10 mx-auto space-y-6',
+          // fixed+z-50 overlay (same pattern as MeetingDetail.tsx) covers the
+          // navbar and back button regardless of whether the native Fullscreen
+          // API actually engaged, since containerRef only wraps this page's
+          // content — the navbar is a DOM sibling further up in App.tsx, so
+          // native fullscreen alone wouldn't reliably hide it on every device.
+          // pt-0 (top padding dropped entirely, unlike the other 3 sides) —
+          // the mini navbar now added up top (see below) is the page's own
+          // "top edge" visually, so padding above it just read as dead
+          // space on a kiosk screen rather than breathing room.
+          isFullscreen ? 'fixed inset-0 z-50 max-w-none overflow-y-auto bg-background px-6 pb-6 pt-0 sm:px-10 sm:pb-10 sm:pt-0' : 'max-w-3xl'
+        )}
+      >
+      {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/meetings, but only
+          while fullscreen — that's the only time this div becomes its own
+          `fixed inset-0` box in its own right (layered above the navbar at
+          z-50), so `-z-10` is safe here: this container is `fixed` +
+          `z-50`, a real stacking context, which scopes negative z-index
+          locally instead of racing AppShell's bg-background further up
+          the tree (the windowed-mode backdrop above this div handles
+          that the normal way, with z-0 + relative z-10). Also opaquely
+          covers this container's own bg-background so the navbar behind
+          it stays hidden, same as before this backdrop was added. */}
+      {isFullscreen && (
+        <>
+          <div
+            className="pointer-events-none fixed inset-0 -z-10 animate-login-gradient bg-[linear-gradient(135deg,hsl(350_62%_10%)_0%,hsl(350_62%_24%)_28%,hsl(355_55%_34%)_48%,hsl(38_68%_38%)_62%,hsl(350_60%_16%)_80%,hsl(350_62%_10%)_100%)]"
+            aria-hidden
+          />
+          <div
+            className="pointer-events-none fixed left-1/2 top-1/3 -z-10 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
+            aria-hidden
+          />
+        </>
       )}
-    >
       {!isFullscreen && (
         <div className="flex items-center justify-between gap-2">
-          <Button asChild variant="ghost" size="sm" className="-ms-2 gap-1.5">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="-ms-2 gap-1.5 text-primary-foreground drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] hover:bg-primary-foreground/10 hover:text-primary-foreground"
+          >
             <Link to={`/meetings/${id}`}>
               <ArrowLeft className="h-3.5 w-3.5" /> กลับไปหน้าการประชุม
             </Link>
@@ -403,7 +505,37 @@ export default function MeetingSummary() {
         // within, which is what actually makes the card's own overflow
         // scroll instead of the card itself expanding. The stat tiles and
         // detail panels stay below, in normal scrolling flow.
-        <div className="flex h-[calc(100dvh-3rem)] flex-col gap-4 sm:h-[calc(100dvh-5rem)]">
+        <div className="flex h-[calc(100dvh-1.5rem)] flex-col gap-4 sm:h-[calc(100dvh-2.5rem)]">
+          {/* Real Navbar.tsx is hidden behind this fullscreen overlay (it's
+              a DOM sibling further up, covered by this fixed z-50 box) —
+              this is a from-scratch mini version, just the brand mark +
+              status pulse, with the nav pill (สมาชิก/การประชุม), admin
+              name, and logout button deliberately left out. Those are
+              admin-navigation affordances that don't belong on a kiosk
+              screen someone else is meant to look at, not use. */}
+          <div className="flex shrink-0 items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-8 w-8 shrink-0 object-contain" />
+              <div className="min-w-0 leading-tight">
+                {/* This wordmark sits directly on the animated backdrop
+                    (maroon-to-gold, same hues), unlike Navbar.tsx's version
+                    which sits on a plain white bg-background — the site's
+                    actual --primary/--accent tokens are too close in value
+                    to that backdrop to read as text on top of it, so this
+                    uses brighter, more saturated red/gold stops (not the
+                    theme tokens) plus a stronger shadow for edge definition
+                    instead. */}
+                <p className="font-brand animate-gradient-move truncate bg-gradient-to-r from-[hsl(0_75%_62%)] via-[hsl(20_80%_58%)] to-[hsl(45_90%_62%)] bg-[length:200%_auto] bg-clip-text text-lg font-extrabold tracking-tight text-transparent drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)]">
+                  FaceIn
+                </p>
+                <p className="truncate text-[10px] text-primary-foreground/60">ระบบเช็คอินราชกัญญาฯ</p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <PulseDot size="md" />
+              <span className="text-xs font-medium text-primary-foreground/70">ระบบพร้อมใช้งาน</span>
+            </div>
+          </div>
           {titleBlock}
           {/* grid-rows-[minmax(0,1fr)] instead of the default 'auto' row —
               an 'auto' row floors at its tallest item's max-content size, so
@@ -591,6 +723,7 @@ export default function MeetingSummary() {
           </Button>
         </div>
       )}
+      </div>
     </div>
   )
 }

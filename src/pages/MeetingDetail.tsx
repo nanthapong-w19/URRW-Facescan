@@ -252,8 +252,35 @@ export default function MeetingDetail() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <Button asChild variant="ghost" size="sm" className="gap-1.5 -ms-2">
+    <div>
+      {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/meetings (and
+          /#/meetings/new, /#/members, /#/login) — `fixed` so it fills the
+          viewport regardless of scroll. `z-0` here + `relative z-10` on
+          the wrapper below (rather than `-z-10`) because AppShell's own
+          wrapper div (`bg-background`, App.tsx) is a plain non-positioned
+          block, which paints above negative-z-index descendants no
+          matter how deep they're nested. */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0 animate-login-gradient bg-[linear-gradient(135deg,hsl(350_62%_10%)_0%,hsl(350_62%_24%)_28%,hsl(355_55%_34%)_48%,hsl(38_68%_38%)_62%,hsl(350_60%_16%)_80%,hsl(350_62%_10%)_100%)]"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none fixed left-1/2 top-1/3 z-0 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
+        aria-hidden
+      />
+      <div className="relative z-10 mx-auto max-w-3xl space-y-6">
+      {/* This row and the title block below sit directly on the animated
+          backdrop (not inside a Card like the rest of the page), so they
+          need the same light-on-dark treatment as /#/login's own text
+          (text-primary-foreground + drop-shadow) instead of the default
+          dark text-foreground/text-muted-foreground, which was unreadable
+          against the maroon gradient. */}
+      <Button
+        asChild
+        variant="ghost"
+        size="sm"
+        className="gap-1.5 -ms-2 text-primary-foreground drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] hover:bg-primary-foreground/10 hover:text-primary-foreground"
+      >
         <Link to="/meetings">
           <ArrowLeft className="h-3.5 w-3.5" /> รายการประชุม
         </Link>
@@ -261,8 +288,8 @@ export default function MeetingDetail() {
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">{meeting.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">สร้างโดย {meeting.createdByName || 'ไม่ทราบ'}</p>
+          <h1 className="font-display text-2xl font-bold text-primary-foreground drop-shadow-[0_1px_3px_rgba(0,0,0,0.35)] sm:text-3xl">{meeting.title}</h1>
+          <p className="mt-1 text-sm text-primary-foreground/70 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]">สร้างโดย {meeting.createdByName || 'ไม่ทราบ'}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button asChild variant="outline" size="sm" className="gap-1.5">
@@ -477,7 +504,7 @@ export default function MeetingDetail() {
           {meeting.participants.length === 0 ? (
             <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">ยังไม่มีผู้เข้าร่วมในการประชุมนี้</p>
           ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid max-h-[420px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
               {meeting.participants.map((p) => {
                 const checkin = checkins.find((c) => c.memberId === p.memberId)
                 return (
@@ -508,6 +535,7 @@ export default function MeetingDetail() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   )
 }

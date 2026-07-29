@@ -1,5 +1,7 @@
 // Shared gradient-ring donut used by both Dashboard.tsx (today's overall
-// rate) and MeetingSummary.tsx (per-meeting rate) — pure SVG rather than a
+// rate) and MeetingSummary.tsx (per-meeting rate, windowed mode only —
+// fullscreen mode uses a horizontal gradient bar instead, see
+// MeetingSummary.tsx's attendanceDonutCard) — pure SVG rather than a
 // charting lib since it's a single static ring with a center label, not
 // worth pulling recharts in for.
 export default function AttendanceDonut({
@@ -16,8 +18,8 @@ export default function AttendanceDonut({
   const offset = circumference * (1 - percent / 100)
 
   return (
-    <div className="relative flex items-center justify-center">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+    <div className="relative flex aspect-square h-full max-h-[168px] w-full max-w-[168px] items-center justify-center">
+      <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full -rotate-90">
         <defs>
           <linearGradient id="donutGradient" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="hsl(350 62% 30%)" />
