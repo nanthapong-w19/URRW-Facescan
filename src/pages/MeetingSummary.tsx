@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform, type Variants } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +44,35 @@ function formatMeetingDate(iso: string | null) {
 }
 
 type Panel = 'all' | 'present' | 'absent' | null
+
+// Fullscreen entrance animation: mini-navbar, title, and the card grid fade
+// + slide in one after another instead of all popping in at once — only
+// used on the fullscreen branch (projector/kiosk display), since windowed
+// mode is a normal admin page someone's actively clicking through, not
+// watching load.
+const fullscreenStagger: Variants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.12, delayChildren: 0.05 } },
+}
+const fullscreenItem: Variants = {
+  hidden: { opacity: 0, y: 14 },
+  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 220, damping: 24 } },
+}
+
+// Fullscreen-only count-up for the attendance percentage — a spring chasing
+// a motion value reads as "live data ticking up" on a projected screen,
+// which a plain re-rendered number (windowed mode still uses) doesn't.
+function AnimatedPercent({ value }: { value: number }) {
+  const motionValue = useMotionValue(0)
+  const spring = useSpring(motionValue, { stiffness: 90, damping: 20 })
+  const rounded = useTransform(spring, (v) => `${Math.round(v)}%`)
+
+  useEffect(() => {
+    motionValue.set(value)
+  }, [motionValue, value])
+
+  return <motion.span>{rounded}</motion.span>
+}
 
 // Clickable KPI tile: the whole card toggles its detail panel below it on
 // click (rather than opening a modal) so both stats stay visible while
@@ -298,21 +328,52 @@ export default function MeetingSummary() {
           // scrollbar (inner one always empty/inert because it exactly
           // matched its parent's size) instead of one that actually scrolls.
           <ul className={cn('divide-y divide-border/70', isFullscreen ? '' : 'max-h-80 overflow-y-auto')}>
-            {recentCheckins.map((c, i) => (
-              <li key={c.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                <CheckinIdentity
-                  name={c.name}
-                  position={c.position}
-                  department={c.department}
-                  photo={c.photoUrl}
-                  highlightRing={i === 0}
-                />
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <CheckinMethodBadge method={c.method} manualLabel="เช็คอินด้วยรหัส" />
-                  <span className="text-xs text-muted-foreground">{c.time}</span>
-                </div>
-              </li>
-            ))}
+            {/* Fullscreen only: each new check-in slides in from the top and
+                the list reflows with a spring instead of just popping into
+                place — worth it on a projector screen where entrances are
+                actually watched; windowed mode keeps the plain <li> since
+                nobody's staring at that list waiting for arrivals. */}
+            <AnimatePresence initial={false} mode={isFullscreen ? 'popLayout' : 'sync'}>
+              {recentCheckins.map((c, i) =>
+                isFullscreen ? (
+                  <motion.li
+                    key={c.id}
+                    layout
+                    initial={{ opacity: 0, y: -12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+                    className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                  >
+                    <CheckinIdentity
+                      name={c.name}
+                      position={c.position}
+                      department={c.department}
+                      photo={c.photoUrl}
+                      highlightRing={i === 0}
+                    />
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <CheckinMethodBadge method={c.method} manualLabel="เช็คอินด้วยรหัส" />
+                      <span className="text-xs text-muted-foreground">{c.time}</span>
+                    </div>
+                  </motion.li>
+                ) : (
+                  <li key={c.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <CheckinIdentity
+                      name={c.name}
+                      position={c.position}
+                      department={c.department}
+                      photo={c.photoUrl}
+                      highlightRing={i === 0}
+                    />
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <CheckinMethodBadge method={c.method} manualLabel="เช็คอินด้วยรหัส" />
+                      <span className="text-xs text-muted-foreground">{c.time}</span>
+                    </div>
+                  </li>
+                )
+              )}
+            </AnimatePresence>
           </ul>
         )}
       </CardContent>
@@ -358,13 +419,17 @@ export default function MeetingSummary() {
           // even a semicircle still cost more height than this does).
           <div className="w-full">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="font-display text-2xl font-bold text-foreground">{attendanceRate}%</span>
+              <span className="font-display text-2xl font-bold text-foreground">
+                <AnimatedPercent value={attendanceRate} />
+              </span>
               <span className="text-xs text-muted-foreground">เข้าร่วมประชุม</span>
             </div>
             <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[hsl(350_62%_30%)] to-[hsl(43_74%_49%)] transition-[width] duration-500 ease-out"
-                style={{ width: `${attendanceRate}%` }}
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-[hsl(350_62%_30%)] to-[hsl(43_74%_49%)]"
+                initial={{ width: 0 }}
+                animate={{ width: `${attendanceRate}%` }}
+                transition={{ type: 'spring', stiffness: 90, damping: 20 }}
               />
             </div>
           </div>
@@ -505,7 +570,12 @@ export default function MeetingSummary() {
         // within, which is what actually makes the card's own overflow
         // scroll instead of the card itself expanding. The stat tiles and
         // detail panels stay below, in normal scrolling flow.
-        <div className="flex h-[calc(100dvh-1.5rem)] flex-col gap-4 sm:h-[calc(100dvh-2.5rem)]">
+        <motion.div
+          className="flex h-[calc(100dvh-1.5rem)] flex-col gap-4 sm:h-[calc(100dvh-2.5rem)]"
+          variants={fullscreenStagger}
+          initial="hidden"
+          animate="visible"
+        >
           {/* Real Navbar.tsx is hidden behind this fullscreen overlay (it's
               a DOM sibling further up, covered by this fixed z-50 box) —
               this is a from-scratch mini version, just the brand mark +
@@ -513,7 +583,7 @@ export default function MeetingSummary() {
               name, and logout button deliberately left out. Those are
               admin-navigation affordances that don't belong on a kiosk
               screen someone else is meant to look at, not use. */}
-          <div className="flex shrink-0 items-center justify-between gap-2">
+          <motion.div variants={fullscreenItem} className="flex shrink-0 items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-8 w-8 shrink-0 object-contain" />
               <div className="min-w-0 leading-tight">
@@ -535,8 +605,8 @@ export default function MeetingSummary() {
               <PulseDot size="md" />
               <span className="text-xs font-medium text-primary-foreground/70">ระบบพร้อมใช้งาน</span>
             </div>
-          </div>
-          {titleBlock}
+          </motion.div>
+          <motion.div variants={fullscreenItem}>{titleBlock}</motion.div>
           {/* grid-rows-[minmax(0,1fr)] instead of the default 'auto' row —
               an 'auto' row floors at its tallest item's max-content size, so
               once check-ins fill past the cap the row (and everything
@@ -547,7 +617,10 @@ export default function MeetingSummary() {
               stops the same content-based floor from re-appearing one level
               up (flex/grid items default to min-height:auto, i.e. their
               content's size, unless min-h-0 overrides it). */}
-          <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-4 lg:grid-cols-3">
+          <motion.div
+            variants={fullscreenItem}
+            className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-4 lg:grid-cols-3"
+          >
             <div className="min-h-0 lg:col-span-2">{recentCheckinsCard}</div>
             {participants.length > 0 && (
               <div className="flex h-full min-h-0 flex-col gap-4 lg:col-span-1">
@@ -555,8 +628,8 @@ export default function MeetingSummary() {
                 {departmentCard}
               </div>
             )}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       ) : (
         <>
           {titleBlock}

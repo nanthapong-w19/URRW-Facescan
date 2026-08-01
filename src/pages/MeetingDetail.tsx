@@ -225,7 +225,13 @@ export default function MeetingDetail() {
     if (!id || checkedInIds.has(participant.memberId)) return
     try {
       const record = await recordMeetingCheckin(id, participant.memberId, method, confidence, photoUrl)
-      setCheckins((prev) => [...prev, record])
+      // Dedupe by id — the realtime subscription above (applyMeetingCheckinEvent)
+      // can echo this exact INSERT back before this await resolves, since the
+      // websocket push and this REST response race independently. Without this
+      // check that race lands the same row twice (this optimistic append plus
+      // the realtime upsert), which showed up as a duplicated name in
+      // "เช็คอินล่าสุด".
+      setCheckins((prev) => (prev.some((c) => c.id === record.id) ? prev : [...prev, record]))
       // No toast.success here — MeetingScanner shows its own in-tree
       // CheckinSuccessToast popup for both face and manual check-ins, which
       // (unlike a toast) stays visible while the scanner is in fullscreen.

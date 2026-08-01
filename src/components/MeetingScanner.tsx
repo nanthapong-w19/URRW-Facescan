@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -342,7 +343,12 @@ export default function MeetingScanner({
             // same logo + wordmark treatment as Navbar.tsx, since this is
             // what a visitor scanning in on a shared kiosk screen sees,
             // not an admin managing the meeting.
-            <div className="flex min-w-0 items-center gap-2.5">
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 220, damping: 22 }}
+              className="flex min-w-0 items-center gap-2.5"
+            >
               <img src="/logo.png" alt="โลโก้ศูนย์ทัศนราชกัญญาราชวิทยาลัย นครราชสีมา" className="h-9 w-9 shrink-0 object-contain" />
               <div className="min-w-0 leading-tight">
                 <p className="font-brand animate-gradient-move truncate bg-gradient-to-r from-primary via-[hsl(350_65%_42%)] to-accent bg-[length:200%_auto] bg-clip-text text-3xl font-extrabold tracking-tight text-transparent drop-shadow-[0_2px_3px_rgba(0,0,0,0.35)] sm:text-4xl">
@@ -350,7 +356,7 @@ export default function MeetingScanner({
                 </p>
                 <p className="truncate text-[11px] text-primary-foreground/85 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.5))_drop-shadow(0_-1px_0_rgba(255,255,255,0.15))]">ระบบเช็คอินราชกัญญาฯ</p>
               </div>
-            </div>
+            </motion.div>
           ) : (
             <div>
               <CardTitle className="font-display flex items-center gap-2 text-base">
@@ -511,10 +517,15 @@ export default function MeetingScanner({
                     <Users className="h-3.5 w-3.5" /> เช็คอินล่าสุด
                   </p>
                   {isFullscreen && (
-                    <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
+                    <motion.span
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 20, delay: 0.15 }}
+                      className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600"
+                    >
                       <PulseDot />
                       LIVE
-                    </span>
+                    </motion.span>
                   )}
                 </div>
                 <div className={cn('space-y-1.5 overflow-y-auto', isFullscreen ? 'min-h-0 flex-1' : 'max-h-56')}>
@@ -522,13 +533,45 @@ export default function MeetingScanner({
                   <p className={cn('rounded-lg px-2.5 py-2 text-xs', isFullscreen ? 'bg-slate-50 text-slate-400' : 'bg-muted text-muted-foreground')}>
                     ยังไม่มีผู้เช็คอิน
                   </p>
+                ) : isFullscreen ? (
+                  // Fullscreen only: each new scan slides in and the list
+                  // reflows with a spring — worth it on a kiosk screen where
+                  // arrivals are actually watched; the admin-facing side
+                  // panel (windowed mode) keeps the plain <div> below since
+                  // nobody's staring at it waiting for the next check-in.
+                  <AnimatePresence initial={false}>
+                    {recentScans.map((r, i) => (
+                      <motion.div
+                        key={r.id}
+                        layout
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+                        className={cn(
+                          'flex items-center gap-2 rounded-lg border px-2.5 py-1.5',
+                          'border-slate-200 bg-slate-50',
+                          i === 0 && 'border-emerald-500/60'
+                        )}
+                      >
+                        <CheckinIdentity
+                          name={r.name}
+                          position={r.position}
+                          department={r.department}
+                          photo={r.photoUrl}
+                          checkOverlay
+                          theme="fullscreen"
+                          subtitleSuffix={r.time}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 ) : (
                   recentScans.map((r, i) => (
                     <div
                       key={r.id}
                       className={cn(
-                        'flex items-center gap-2 rounded-lg border px-2.5 py-1.5',
-                        isFullscreen ? 'border-slate-200 bg-slate-50' : 'border-border/50 bg-secondary/40',
+                        'flex items-center gap-2 rounded-lg border px-2.5 py-1.5 border-border/50 bg-secondary/40',
                         i === 0 && 'border-emerald-500/60'
                       )}
                     >
@@ -538,7 +581,7 @@ export default function MeetingScanner({
                         department={r.department}
                         photo={r.photoUrl}
                         checkOverlay
-                        theme={isFullscreen ? 'fullscreen' : 'default'}
+                        theme="default"
                         subtitleSuffix={r.time}
                       />
                     </div>
@@ -585,12 +628,25 @@ function ManualMeetingCheckin({
 }) {
   const [query, setQuery] = useState('')
 
+  // Ranked, not just filtered — a hard `.slice(0, 4)` with no ordering could
+  // silently cut off the very person being searched for once a meeting had
+  // enough participants sharing a substring (e.g. a common department in the
+  // name). Name-prefix hits rank above mid-string hits, and employeeId hits
+  // rank last; the cap is generous (20) since the results box now scrolls
+  // instead of hard-truncating.
   const matches = useMemo(() => {
     if (!query.trim()) return []
     const q = query.trim().toLowerCase()
     return participants
-      .filter((p) => p.name.toLowerCase().includes(q) || p.employeeId.toLowerCase().includes(q))
-      .slice(0, 4)
+      .map((p) => {
+        const name = p.name.toLowerCase()
+        const rank = name.startsWith(q) ? 0 : name.includes(q) ? 1 : p.employeeId.toLowerCase().includes(q) ? 2 : -1
+        return { p, rank }
+      })
+      .filter((m) => m.rank !== -1)
+      .sort((a, b) => a.rank - b.rank)
+      .map((m) => m.p)
+      .slice(0, 20)
   }, [participants, query])
 
   return (
@@ -619,7 +675,7 @@ function ManualMeetingCheckin({
         />
       </div>
       {query.trim() && (
-        <div className="space-y-1">
+        <div className="max-h-56 space-y-1 overflow-y-auto">
           {matches.length === 0 ? (
             <p className={cn('rounded-lg px-2 py-1.5 text-xs', isFullscreen ? 'bg-slate-50 text-slate-400' : 'bg-muted text-muted-foreground')}>
               ไม่พบผู้เข้าร่วมที่ตรงกัน
