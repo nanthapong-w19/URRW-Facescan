@@ -103,7 +103,7 @@ export default function Login() {
             without this the page would have no heading landmark at all. */}
         <h1 className="sr-only">เข้าสู่ระบบผู้ดูแลระบบ</h1>
 
-        <Card className="w-full border-accent/25 bg-card/[0.97] shadow-2xl backdrop-blur-sm">
+        <Card className="animate-login-card-in w-full border-accent/25 bg-card/[0.97] shadow-2xl backdrop-blur-sm">
           <CardHeader className="items-center text-center">
             {/* Round 46: reverted round 45's inline logo+wordmark lockup
                 back to a large, stacked logo sitting on its own line

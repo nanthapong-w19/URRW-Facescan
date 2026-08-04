@@ -503,7 +503,7 @@ export default function MeetingSummary() {
       <div
         ref={containerRef}
         className={cn(
-          'relative z-10 mx-auto space-y-6',
+          'animate-page-in relative z-10 mx-auto space-y-6',
           // fixed+z-50 overlay (same pattern as MeetingDetail.tsx) covers the
           // navbar and back button regardless of whether the native Fullscreen
           // API actually engaged, since containerRef only wraps this page's

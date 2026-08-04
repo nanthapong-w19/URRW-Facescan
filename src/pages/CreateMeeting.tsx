@@ -142,7 +142,7 @@ export default function CreateMeeting() {
         className="pointer-events-none fixed left-1/2 top-1/3 z-0 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
         aria-hidden
       />
-      <div className="relative z-10 mx-auto max-w-3xl space-y-6">
+      <div className="animate-page-in relative z-10 mx-auto max-w-3xl space-y-6">
       <Card className="border-border/70 shadow-soft">
         <CardHeader>
           <CardTitle className="font-display text-base">กรอกรายละเอียดการประชุม</CardTitle>

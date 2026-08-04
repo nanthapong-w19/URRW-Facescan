@@ -321,6 +321,103 @@
   }
 }
 
+/* Page-level entrance animation, applied once to each route's own content
+   wrapper (round: "ทุกหน้ามี animation ที่เหมาะสม") — a brief fade + gentle
+   rise on mount, CSS-only (transform+opacity, GPU-composited, no
+   framer-motion / JS re-render cost) so it's cheap enough to run on every
+   navigation. Deliberately ends at literal `transform: none` rather than
+   `translateY(0)` — a non-`none` transform value permanently turns the
+   animated element into a containing block for any `position: fixed`
+   descendant (e.g. MeetingScanner's own fullscreen overlay nested inside
+   MeetingDetail's animated wrapper), which would silently break that
+   descendant's fullscreen coverage for the rest of its life. Ending on the
+   `none` keyword avoids that entirely once the ~450ms animation finishes. */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-page-in {
+  animation: page-fade-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Same fade+rise, applied per-child with an increasing delay so a grid of
+   cards reads as "populating" rather than one flat pop-in. Only used on
+   grids that are stable at mount (Dashboard's 4 KPI tiles, MeetingList's
+   meeting cards) — never on lists that reorder live (realtime check-in
+   feeds, sortable tables), since changing a child's DOM position changes
+   which :nth-child delay it matches and can re-trigger the animation.
+   Delay is capped at the 8th child so a longer grid doesn't drag its tail
+   out past what still reads as "one moment", not "still loading". */
+.animate-stagger > * {
+  opacity: 0;
+  animation: page-fade-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.animate-stagger > *:nth-child(2) {
+  animation-delay: 45ms;
+}
+.animate-stagger > *:nth-child(3) {
+  animation-delay: 90ms;
+}
+.animate-stagger > *:nth-child(4) {
+  animation-delay: 135ms;
+}
+.animate-stagger > *:nth-child(5) {
+  animation-delay: 180ms;
+}
+.animate-stagger > *:nth-child(6) {
+  animation-delay: 225ms;
+}
+.animate-stagger > *:nth-child(7) {
+  animation-delay: 270ms;
+}
+.animate-stagger > *:nth-child(n + 8) {
+  animation-delay: 315ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-in,
+  .animate-stagger > * {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* /#/login's card has its own entrance, separate from .animate-page-in
+   above — a touch more pronounced (slight scale-in, longer travel) to
+   match the rest of this page's bespoke maroon/gold treatment, and delayed
+   0.1s so it settles in just after the backdrop is already visible rather
+   than both popping in simultaneously. Same `transform: none` end-state
+   reasoning as .animate-page-in — this page's own fullscreen success
+   overlay is a sibling, not a descendant, of the animated Card, so it's
+   not strictly at risk here, but ending on `none` costs nothing and keeps
+   the pattern consistent everywhere in this file. */
+@keyframes login-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-login-card-in {
+  animation: login-card-in 0.55s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-login-card-in {
+    animation: none;
+  }
+}
+
 /* CheckinSuccessToast's dismiss-countdown bar — animation-duration is set
    inline per-toast so it always matches that toast's actual sonner duration. */
 @keyframes toast-progress {

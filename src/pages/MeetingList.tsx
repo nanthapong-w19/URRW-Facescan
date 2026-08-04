@@ -70,7 +70,7 @@ export default function MeetingList() {
         className="pointer-events-none fixed left-1/2 top-1/3 z-0 h-[560px] w-[560px] animate-login-sheen rounded-full bg-[radial-gradient(circle,hsl(45_65%_92%/0.55)_0%,transparent_70%)] blur-3xl"
         aria-hidden
       />
-      <div className="relative z-10 space-y-6">
+      <div className="animate-page-in relative z-10 space-y-6">
         {/* The "ออกจากระบบ" (logout) button that used to sit here was removed
             by request (round 38) — the navbar already has its own logout
             button whenever an admin session is active. The title + "logged
@@ -103,12 +103,12 @@ export default function MeetingList() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="animate-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {meetings.map((meeting) => {
               const attendance = attendanceRate(meeting)
               return (
                 <Link key={meeting.id} to={isAdmin ? `/meetings/${meeting.id}` : `/meetings/${meeting.id}/summary`}>
-                  <Card className="h-full border-border/70 shadow-soft transition-shadow hover:shadow-lift">
+                  <Card className="h-full border-border/70 shadow-soft transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lift">
                     <CardHeader className="space-y-2">
                       <CardTitle className="font-display line-clamp-2 text-base leading-snug">{meeting.title}</CardTitle>
                       <CardDescription className="flex items-center gap-1.5 text-xs">

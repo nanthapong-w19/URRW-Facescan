@@ -42,7 +42,7 @@ export default function Dashboard() {
   const recent = useMemo(() => checkins.slice(0, 8), [checkins])
 
   return (
-    <div className="space-y-6">
+    <div className="animate-page-in space-y-6">
       <PageHeader
         title="ภาพรวมระบบ"
         description="สรุปสถานะการเช็คอินและสมาชิกทั้งหมดแบบเรียลไทม์"
@@ -56,7 +56,7 @@ export default function Dashboard() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="animate-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border/70 shadow-soft transition-transform hover:-translate-y-0.5">
           <CardContent className="flex items-center justify-between p-5">
             <div>

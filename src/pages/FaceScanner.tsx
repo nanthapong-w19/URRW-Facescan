@@ -211,7 +211,7 @@ export default function FaceScanner() {
   const showFrameWarning = camera.cameraState === 'ready' && (camera.trackMuted || camera.noFrames || camera.blackFrames)
 
   return (
-    <div className="space-y-6">
+    <div className="animate-page-in space-y-6">
       <PageHeader
         title="สแกนใบหน้าเพื่อเช็คอิน"
         description="จัดใบหน้าให้อยู่ตรงกลางกรอบกล้อง ระบบจะเช็คอินให้อัตโนมัติเมื่อพบข้อมูลตรงกัน"
