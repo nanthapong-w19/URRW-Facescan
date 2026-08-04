@@ -19,6 +19,7 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import { useFaceCamera } from '@/hooks/useFaceCamera'
+import { CONFIRM_HOLD_MS, nextMatchStreak, streakHeldMs, type MatchStreak } from '@/lib/faceEngine'
 import {
   getFullscreenElement,
   requestFullscreen,
@@ -39,32 +40,6 @@ type ScanFeedback = { name: string; department: string; position: string; method
 const SCROLL_EXIT_THRESHOLD_PX = 80
 
 const REPEAT_COOLDOWN_MS = 15000
-// The same person must match continuously for this long before a check-in
-// is actually recorded — protects against a single fleeting frame (motion
-// blur, someone briefly walking past, a photo held up for an instant)
-// triggering a check-in immediately. ~1.5s of holding steady in front of
-// the camera, same idea as a tap-and-hold button.
-const CONFIRM_HOLD_MS = 1500
-
-export interface MatchStreak {
-  memberId: string | null
-  since: number
-}
-
-// Tick policy (see CONTEXT.md "Tick policy"), split out as a pure function
-// so it's testable without a DOM/video element: the SAME participant must
-// match continuously for CONFIRM_HOLD_MS before a check-in is confirmed —
-// switching to no-match, a different person, or losing the face entirely
-// resets the streak, so only sustained agreement counts.
-export function nextMatchStreak(streak: MatchStreak, matchedMemberId: string | null, now: number): MatchStreak {
-  if (matchedMemberId === null) return { memberId: null, since: 0 }
-  if (streak.memberId !== matchedMemberId) return { memberId: matchedMemberId, since: now }
-  return streak
-}
-
-export function streakHeldMs(streak: MatchStreak, now: number): number {
-  return streak.memberId ? now - streak.since : 0
-}
 
 // Draws a fresh mirrored frame straight from the live <video> element —
 // deliberately NOT the on-screen <canvas>, which also has the live

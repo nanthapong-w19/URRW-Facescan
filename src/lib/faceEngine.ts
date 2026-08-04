@@ -42,8 +42,16 @@ export interface DetectedFace {
   landmarks: faceapi.FaceLandmarks68
 }
 
+// inputSize bumped 320 -> 416 (accuracy round): tinyFaceDetector runs at a
+// fixed square input resolution, downscaling the real frame to fit — 320 was
+// soft enough to lose detail on a face that's smaller in frame (further from
+// the camera, or a wider kiosk shot), which costs the *recognition* net
+// descriptor quality even when the box itself was still found. 416 keeps
+// more of that detail at a still-modest per-frame cost (single detector
+// pass, not the full pipeline, and this only runs once per SCAN_INTERVAL_MS
+// tick, not every rendered frame).
 const DETECTOR_OPTIONS = new faceapi.TinyFaceDetectorOptions({
-  inputSize: 320,
+  inputSize: 416,
   scoreThreshold: 0.5,
 })
 
@@ -116,10 +124,80 @@ export function descriptorDistance(a: number[] | Float32Array, b: number[] | Flo
 }
 
 // face-api.js's own recognition net is calibrated so that distances below
-// ~0.6 typically indicate the same person.
-export const MATCH_THRESHOLD = 0.55
+// ~0.6 typically indicate the same person. Loosened from a stricter 0.55
+// (accuracy round) — 0.55 was cutting off real matches under everyday
+// lighting/angle variance (false negatives: "doesn't recognize me"), and the
+// new MATCH_MARGIN check below now carries the false-positive-prevention
+// job this threshold used to shoulder alone, so it can afford to sit closer
+// to face-api.js's own calibrated value.
+export const MATCH_THRESHOLD = 0.58
+
+// Minimum distance the best-matching candidate must lead the *second*-best
+// candidate by, on top of clearing MATCH_THRESHOLD, before a match counts as
+// confident (see resolveTick in useFaceCamera.ts). With a roster in the
+// hundreds, "closest candidate beats the threshold" alone isn't enough —
+// two different people's descriptors can land close enough together that
+// the wrong one wins a photo-finish. Requiring real daylight between 1st
+// and 2nd place turns that photo-finish into "no confident match" instead
+// of a coin-flip pick. A lone registered candidate (no second-best to
+// compare against) always clears this trivially.
+export const MATCH_MARGIN = 0.08
 
 export function distanceToConfidence(distance: number): number {
   const clamped = Math.max(0, Math.min(1, 1 - distance / MATCH_THRESHOLD / 1.4))
   return clamped
+}
+
+/** Elementwise mean of several same-length descriptors into one centroid
+ * vector — used to average multiple enrollment shots (different angles/
+ * expressions) into a single more-robust reference descriptor, without
+ * changing the stored shape (still one 128-d `number[]` per member, so no
+ * database schema change is needed to get the accuracy benefit of
+ * multi-shot enrollment). */
+export function averageDescriptors(descriptors: number[][]): number[] {
+  const length = descriptors[0].length
+  const sum = new Array(length).fill(0)
+  for (const descriptor of descriptors) {
+    for (let i = 0; i < length; i++) sum[i] += descriptor[i]
+  }
+  return sum.map((total) => total / descriptors.length)
+}
+
+// --- Match-streak hold (see CONTEXT.md "Tick policy") ---------------------
+//
+// Originally lived only in MeetingScanner.tsx (its per-meeting check-in was
+// the first thing to need it); moved here once FaceScanner.tsx's daily
+// kiosk check-in needed the exact same behavior (accuracy round). Unlike
+// the mirror-frame capture helper the two scanners each keep their own copy
+// of (see captureCleanMirroredFrame in MeetingScanner.tsx) — there, no
+// shared module existed yet and the two implementations differ slightly in
+// context — this logic is pure, DOM-free, and faceEngine.ts already was the
+// established shared home for match-related logic both components already
+// imported from, so extracting it here cost nothing extra.
+//
+// Shared by both scan surfaces (FaceScanner.tsx's daily kiosk check-in and
+// MeetingScanner.tsx's per-meeting check-in): the SAME candidate must keep
+// matching for CONFIRM_HOLD_MS before a check-in is actually recorded,
+// rather than firing on the very first matching tick. Protects against a
+// single noisy frame (motion blur, someone briefly walking past, the
+// detector's own frame-to-frame jitter flipping between two visually
+// similar registered faces) triggering a check-in immediately — switching
+// to no-match, a different person, or losing the face entirely resets the
+// streak, so only sustained agreement counts. ~1.5s of holding steady in
+// front of the camera, same idea as a tap-and-hold button.
+export const CONFIRM_HOLD_MS = 1500
+
+export interface MatchStreak {
+  memberId: string | null
+  since: number
+}
+
+export function nextMatchStreak(streak: MatchStreak, matchedMemberId: string | null, now: number): MatchStreak {
+  if (matchedMemberId === null) return { memberId: null, since: 0 }
+  if (streak.memberId !== matchedMemberId) return { memberId: matchedMemberId, since: now }
+  return streak
+}
+
+export function streakHeldMs(streak: MatchStreak, now: number): number {
+  return streak.memberId ? now - streak.since : 0
 }

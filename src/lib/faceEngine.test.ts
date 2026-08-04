@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { nextMatchStreak, streakHeldMs, type MatchStreak } from './MeetingScanner'
+import { averageDescriptors, nextMatchStreak, streakHeldMs, type MatchStreak } from './faceEngine'
+
+describe('averageDescriptors', () => {
+  it('averages a single descriptor to itself', () => {
+    expect(averageDescriptors([[1, 2, 3]])).toEqual([1, 2, 3])
+  })
+
+  it('takes the elementwise mean across several descriptors', () => {
+    expect(averageDescriptors([[0, 0, 0], [3, 6, 9], [6, 12, 18]])).toEqual([3, 6, 9])
+  })
+})
 
 describe('nextMatchStreak', () => {
   const idle: MatchStreak = { memberId: null, since: 0 }

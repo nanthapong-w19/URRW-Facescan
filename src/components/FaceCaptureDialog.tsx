@@ -4,8 +4,19 @@ import { Button } from '@/components/ui/button'
 import { ScanFace, Loader2, CheckCircle2, AlertTriangle, RotateCcw, SwitchCamera, ShieldAlert, ImagePlus } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCameraStream } from '@/hooks/useCameraStream'
-import { detectFaceWithDescriptor } from '@/lib/faceEngine'
+import { detectFaceWithDescriptor, averageDescriptors } from '@/lib/faceEngine'
 import { cn } from '@/lib/utils'
+
+// Accuracy round: enrollment now takes ENROLL_SHOTS live shots instead of
+// one, averaging their descriptors into a single centroid vector (still one
+// 128-d number[] — same shape the database already stores, so no schema
+// change) before saving. A short prompt nudges each shot toward a slightly
+// different angle, so the averaged descriptor is less sensitive to any one
+// pose/lighting moment than a single snapshot would be. The gallery-upload
+// fallback below stays single-shot — asking someone to pick three separate
+// files is real friction for what's already the no-camera fallback path.
+const ENROLL_SHOTS = 3
+const SHOT_PROMPTS = ['มองตรงเข้ากล้อง', 'หันหน้าเอียงซ้ายเล็กน้อย', 'หันหน้าเอียงขวาเล็กน้อย']
 
 interface FaceCaptureDialogProps {
   open: boolean
@@ -50,11 +61,16 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
   const [captureErrorMsg, setCaptureErrorMsg] = useState('')
   const [captured, setCaptured] = useState<{ descriptor: number[]; photo: string } | null>(null)
   const [faceDetected, setFaceDetected] = useState(false)
+  // Descriptors from live shots taken so far this enrollment attempt —
+  // cleared on open and on retake, grows one at a time as handleCapture
+  // fires, averaged into `captured` once it reaches ENROLL_SHOTS.
+  const [shots, setShots] = useState<number[][]>([])
 
   useEffect(() => {
     if (!open) return
     setCaptured(null)
     setCaptureErrorMsg('')
+    setShots([])
     camera.start()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -97,6 +113,7 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
       setCaptureErrorMsg('ไม่พบใบหน้าในเฟรมนี้ กรุณาจัดใบหน้าให้อยู่ตรงกลางกล้องแล้วลองใหม่')
       return
     }
+    setCaptureErrorMsg('')
     // Mirror the still capture to match the selfie-view preview the user saw live.
     const snapCanvas = document.createElement('canvas')
     snapCanvas.width = video.videoWidth
@@ -108,7 +125,12 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
       ctx.drawImage(video, 0, 0)
     }
     const photo = snapCanvas.toDataURL('image/jpeg', 0.85)
-    setCaptured({ descriptor: Array.from(result.descriptor), photo })
+    const nextShots = [...shots, Array.from(result.descriptor)]
+    setShots(nextShots)
+
+    if (nextShots.length < ENROLL_SHOTS) return // keep scanning for the next angle/prompt
+
+    setCaptured({ descriptor: averageDescriptors(nextShots), photo })
     if (detectRafRef.current) cancelAnimationFrame(detectRafRef.current)
     camera.stop()
   }
@@ -139,6 +161,7 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
     }
     setCaptureErrorMsg('')
     const photo = cropFaceToDataUrl(img, result.box)
+    setShots([])
     setCaptured({ descriptor: Array.from(result.descriptor), photo })
     if (detectRafRef.current) cancelAnimationFrame(detectRafRef.current)
     camera.stop()
@@ -152,6 +175,7 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
 
   function handleRetake() {
     setCaptured(null)
+    setShots([])
     camera.start(camera.activeDeviceId)
   }
 
@@ -227,7 +251,9 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
                     faceDetected ? 'bg-emerald-500/90 text-white' : 'bg-black/50 text-white/80'
                   )}
                 >
-                  {faceDetected ? 'ตรวจพบใบหน้า พร้อมถ่ายภาพ' : 'กำลังค้นหาใบหน้า...'}
+                  {faceDetected
+                    ? `ตรวจพบใบหน้า พร้อมถ่ายภาพที่ ${shots.length + 1}/${ENROLL_SHOTS}`
+                    : 'กำลังค้นหาใบหน้า...'}
                 </div>
               )}
               {captured && (
@@ -258,9 +284,14 @@ export default function FaceCaptureDialog({ open, memberName, onOpenChange, onCa
         </div>
 
         {scanning && !showFrameWarning && (
-          <p className="text-center text-xs text-muted-foreground">
-            ถ้าภาพเป็นสีดำสนิท ลองเลือกกล้องอื่นจากเมนูด้านบน (บางเครื่องมีกล้อง IR สำหรับ Windows Hello ด้วย)
-          </p>
+          <>
+            <p className="text-center text-sm font-medium text-foreground">
+              ภาพที่ {shots.length + 1} จาก {ENROLL_SHOTS}: {SHOT_PROMPTS[shots.length]}
+            </p>
+            <p className="text-center text-xs text-muted-foreground">
+              ถ้าภาพเป็นสีดำสนิท ลองเลือกกล้องอื่นจากเมนูด้านบน (บางเครื่องมีกล้อง IR สำหรับ Windows Hello ด้วย)
+            </p>
+          </>
         )}
 
         {captureErrorMsg && scanning && (

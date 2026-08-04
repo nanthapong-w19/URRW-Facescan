@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useCameraStream, type CameraOverlay, type UseCameraStreamOptions } from './useCameraStream'
-import { detectFaceWithDescriptor, descriptorDistance, MATCH_THRESHOLD, type DetectedFace } from '@/lib/faceEngine'
+import { detectFaceWithDescriptor, descriptorDistance, MATCH_THRESHOLD, MATCH_MARGIN, type DetectedFace } from '@/lib/faceEngine'
 
 // Face-recognition module (see CONTEXT.md "Face camera"): layers a
 // throttled detection tick + candidate-matching on top of useCameraStream.
@@ -76,11 +76,26 @@ export function resolveTick<C extends FaceCandidate>(
 ): TickResult<C> | null {
   if (!face) return null
   let bestMatch: { candidate: C; distance: number } | null = null
+  // Tracked alongside bestMatch (not computed via a second pass) so this
+  // stays O(n) over the candidate list — MATCH_MARGIN below needs the gap
+  // between 1st and 2nd place, not just the winner.
+  let secondBestDistance = Infinity
   for (const candidate of candidates) {
     if (!candidate.faceDescriptor) continue
     const distance = descriptorDistance(face.descriptor, candidate.faceDescriptor)
-    if (!bestMatch || distance < bestMatch.distance) bestMatch = { candidate, distance }
+    if (!bestMatch || distance < bestMatch.distance) {
+      if (bestMatch) secondBestDistance = bestMatch.distance
+      bestMatch = { candidate, distance }
+    } else if (distance < secondBestDistance) {
+      secondBestDistance = distance
+    }
   }
-  const isMatch = Boolean(bestMatch && bestMatch.distance < MATCH_THRESHOLD)
+  // Confident only when the winner both clears MATCH_THRESHOLD on its own
+  // AND leads the runner-up by MATCH_MARGIN — see faceEngine.ts for why a
+  // large roster needs that second condition. A lone candidate (no
+  // runner-up to compare against) always clears the margin trivially.
+  const isMatch = Boolean(
+    bestMatch && bestMatch.distance < MATCH_THRESHOLD && secondBestDistance - bestMatch.distance >= MATCH_MARGIN
+  )
   return { face, bestMatch, isMatch }
 }

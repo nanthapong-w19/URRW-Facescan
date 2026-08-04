@@ -27,7 +27,15 @@ import {
 } from '@/components/ui/select'
 import { useAppData } from '@/hooks/useAppData'
 import { recordCheckin, hasCheckedInToday } from '@/lib/store'
-import { distanceToConfidence, averageEyeAspectRatio, EAR_BLINK_THRESHOLD } from '@/lib/faceEngine'
+import {
+  distanceToConfidence,
+  averageEyeAspectRatio,
+  EAR_BLINK_THRESHOLD,
+  CONFIRM_HOLD_MS,
+  nextMatchStreak,
+  streakHeldMs,
+  type MatchStreak,
+} from '@/lib/faceEngine'
 import { useFaceCamera } from '@/hooks/useFaceCamera'
 import type { Member } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -97,22 +105,29 @@ export default function FaceScanner() {
     eyesClosed: false,
     blinkAt: null,
   })
+  const matchStreakRef = useRef<MatchStreak>({ memberId: null, since: 0 })
 
   const [feedback, setFeedback] = useState<ScanFeedback>(null)
   const [manualQuery, setManualQuery] = useState('')
   const [waitingForBlink, setWaitingForBlink] = useState(false)
 
-  // Tick policy (see CONTEXT.md "Tick policy"): a lightweight liveness
-  // check — track eye-aspect-ratio across ticks and require one real blink
-  // (closed -> open transition) before trusting a match enough to check
-  // someone in. A static photo or frozen video frame held up to the camera
-  // will never produce that transition.
+  // Tick policy (see CONTEXT.md "Tick policy"): two independent temporal
+  // gates must BOTH pass before a check-in fires — (1) liveness: track
+  // eye-aspect-ratio across ticks and require one real blink (closed ->
+  // open transition), which a static photo or frozen video frame held up to
+  // the camera can never produce; (2) a match-streak hold (accuracy round):
+  // the SAME candidate must keep matching for CONFIRM_HOLD_MS, not just on
+  // a single lucky tick — protects against detector jitter flipping between
+  // two visually similar registered faces for one frame. Same
+  // nextMatchStreak/streakHeldMs pair MeetingScanner.tsx uses for its own
+  // per-meeting check-in, shared via faceEngine.ts.
   const camera = useFaceCamera({
     candidates: registeredMembers,
     modelLoadErrorMessage: MODEL_LOAD_ERROR_MESSAGE,
     onTick: (result) => {
       if (!result) {
         livenessRef.current = { eyesClosed: false, blinkAt: null }
+        matchStreakRef.current = { memberId: null, since: 0 }
         setWaitingForBlink(false)
         return null
       }
@@ -123,9 +138,12 @@ export default function FaceScanner() {
       livenessRef.current = nextLivenessState(livenessRef.current, ear, now)
       const live = isLive(livenessRef.current.blinkAt, now)
 
+      matchStreakRef.current = nextMatchStreak(matchStreakRef.current, isMatch ? bestMatch!.candidate.id : null, now)
+      const isConfirmed = isMatch && streakHeldMs(matchStreakRef.current, now) >= CONFIRM_HOLD_MS
+
       setWaitingForBlink(isMatch && !live)
 
-      if (isMatch && live) {
+      if (isConfirmed && live) {
         const member = bestMatch!.candidate
         const lastTime = lastCheckinRef.current[member.id] ?? 0
         const alreadyToday = hasCheckedInToday(checkins, member.id)
@@ -161,8 +179,14 @@ export default function FaceScanner() {
       const matchedName = bestMatch?.candidate.name
       return {
         box: face.box,
-        color: isMatch ? (live ? '#10b981' : '#3b82f6') : '#f59e0b',
-        label: isMatch ? (live ? matchedName! : `${matchedName} · กระพริบตา`) : 'ไม่พบในระบบ',
+        color: isMatch ? (live && isConfirmed ? '#10b981' : '#3b82f6') : '#f59e0b',
+        label: isMatch
+          ? live
+            ? isConfirmed
+              ? matchedName!
+              : `${matchedName} · กำลังยืนยัน`
+            : `${matchedName} · กระพริบตา`
+          : 'ไม่พบในระบบ',
       }
     },
   })
