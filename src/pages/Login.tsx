@@ -92,6 +92,10 @@ export default function Login() {
           paddingTop: 'max(2.5rem, env(safe-area-inset-top) + 1.5rem)',
           paddingBottom: 'max(2.5rem, env(safe-area-inset-bottom) + 1.5rem)',
         }}
+        // Hidden from assistive tech while the success overlay covers it —
+        // the card is still visually underneath (z-50 overlay just paints
+        // over it) and its input/button stay in the tab order otherwise.
+        aria-hidden={matchedName ? true : undefined}
       >
         {/* A screen-reader-only heading is kept (not shown visually) so the
             page still has a real <h1> landmark for assistive tech — shadcn's
@@ -135,6 +139,8 @@ export default function Login() {
               <Input
                 id="manual-id"
                 aria-label="เข้าสู่ระบบด้วยรหัสผู้ดูแล"
+                aria-invalid={manualError ? true : undefined}
+                aria-describedby={manualError ? 'manual-id-error' : undefined}
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleManualLogin()}
@@ -143,16 +149,22 @@ export default function Login() {
                 autoCapitalize="characters"
                 autoCorrect="off"
                 spellCheck={false}
+                disabled={!!matchedName}
                 // 16px min font size — anything smaller makes iOS Safari
                 // zoom the whole page in on focus, which is jarring on a
                 // screen that's meant to work smoothly on any device.
                 className="text-center text-base"
               />
             </div>
-            {manualError && <p className="text-xs text-destructive">{manualError}</p>}
+            {manualError && (
+              <p id="manual-id-error" role="alert" className="text-xs text-destructive">
+                {manualError}
+              </p>
+            )}
             <Button
               size="lg"
               onClick={handleManualLogin}
+              disabled={!!matchedName}
               // เลือดหมู-ทอง hover sweep, applied directly here since this
               // page is deliberately excluded from the shared .themed-pages
               // hover treatment in index.css (Login uses its own bespoke
