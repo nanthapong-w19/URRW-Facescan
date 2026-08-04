@@ -81,24 +81,58 @@ export function useCameraStream(options: UseCameraStreamOptions = {}) {
 
         const overlay = overlayRef.current
         if (overlay) {
-          ctx.strokeStyle = overlay.color
+          // Rounded, softly glowing match box instead of a flat rectangle —
+          // still drawn here (inside the mirrored transform, same as
+          // before) so `overlay.box`'s un-mirrored coordinates land in the
+          // right on-screen spot automatically. `roundRect` is unsupported
+          // only on very old browsers; falling back to a square corner
+          // there just loses the rounding, nothing breaks.
+          const { box, color } = overlay
+          const radius = Math.min(18, box.width / 4, box.height / 4)
           ctx.lineWidth = 4
-          ctx.strokeRect(overlay.box.x, overlay.box.y, overlay.box.width, overlay.box.height)
+          ctx.strokeStyle = color
+          ctx.shadowColor = color
+          ctx.shadowBlur = 14
+          ctx.beginPath()
+          if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(box.x, box.y, box.width, box.height, radius)
+          } else {
+            ctx.rect(box.x, box.y, box.width, box.height)
+          }
+          ctx.stroke()
         }
         ctx.restore()
 
-        // Name label above the box — box coordinates come from the
-        // un-mirrored detector, so the label's x has to be mirrored
-        // separately to line up with the mirrored box drawn above.
+        // Name label above the box, as a rounded pill instead of a flat
+        // rectangle — box coordinates come from the un-mirrored detector,
+        // so the label's x has to be mirrored separately to line up with
+        // the mirrored box drawn above. Clamped to the canvas's top edge so
+        // a face detected near the very top of frame doesn't push the pill
+        // off-canvas.
         if (overlay?.label) {
           const { box, color, label } = overlay
           const mirroredX = canvas.width - box.x - box.width
-          ctx.font = '600 20px "IBM Plex Sans Thai", "IBM Plex Sans", sans-serif'
-          const textWidth = ctx.measureText(label).width
+          ctx.font = '600 18px "IBM Plex Sans Thai", "IBM Plex Sans", sans-serif'
+          const paddingX = 14
+          const pillHeight = 32
+          const pillWidth = ctx.measureText(label).width + paddingX * 2
+          const pillY = Math.max(4, box.y - pillHeight - 10)
+          ctx.save()
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.35)'
+          ctx.shadowBlur = 8
+          ctx.shadowOffsetY = 2
           ctx.fillStyle = color
-          ctx.fillRect(mirroredX - 2, box.y - 34, textWidth + 16, 30)
+          ctx.beginPath()
+          if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(mirroredX, pillY, pillWidth, pillHeight, pillHeight / 2)
+          } else {
+            ctx.rect(mirroredX, pillY, pillWidth, pillHeight)
+          }
+          ctx.fill()
+          ctx.restore()
           ctx.fillStyle = '#ffffff'
-          ctx.fillText(label, mirroredX + 6, box.y - 11)
+          ctx.textBaseline = 'middle'
+          ctx.fillText(label, mirroredX + paddingX, pillY + pillHeight / 2 + 1)
         }
 
         framesPaintedRef.current += 1

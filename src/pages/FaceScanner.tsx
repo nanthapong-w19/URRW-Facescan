@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { CheckinSuccessToast } from '@/components/CheckinSuccessToast'
+import { ScanFrameOverlay } from '@/components/ScanFrameOverlay'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { SearchInput } from '@/components/ui/search-input'
@@ -290,6 +291,7 @@ export default function FaceScanner() {
                   (camera.cameraState === 'loading' || camera.cameraState === 'error') && 'hidden'
                 )}
               />
+              {camera.cameraState === 'ready' && <ScanFrameOverlay active={!feedback} />}
 
               {showFrameWarning && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto bg-slate-900/95 p-4 text-center sm:p-6">

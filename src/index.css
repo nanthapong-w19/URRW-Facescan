@@ -418,6 +418,42 @@
   }
 }
 
+/* Face-scan viewfinder's scanning-line sweep (ScanFrameOverlay.tsx) — a
+   soft horizontal band drifting down the frame while the camera is
+   actively looking for a face, the classic biometric-scanner cue. `top` is
+   animated rather than `transform: translateY()` because the bar's own
+   height is fixed while the distance it needs to travel is the *parent's*
+   height — a transform percentage resolves against the animated element's
+   own box, not its container's, so it can't express that; `top` can. The
+   element is `position: absolute` and purely decorative (aria-hidden), so
+   the reflow this causes is isolated to itself, not the surrounding page.
+   Dropped entirely (not just frozen) under prefers-reduced-motion, same as
+   this file's other purely-cosmetic loops. */
+@keyframes scan-line-sweep {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 92%;
+    opacity: 0;
+  }
+}
+.animate-scan-line {
+  animation: scan-line-sweep 2.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-scan-line {
+    display: none;
+  }
+}
+
 /* CheckinSuccessToast's dismiss-countdown bar — animation-duration is set
    inline per-toast so it always matches that toast's actual sonner duration. */
 @keyframes toast-progress {
