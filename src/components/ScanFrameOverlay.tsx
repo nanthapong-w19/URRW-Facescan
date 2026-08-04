@@ -13,7 +13,11 @@ export interface ScanFrameOverlayProps {
 // label directly on the canvas (see useCameraStream's paint loop) — this
 // is purely an ambient frame around that, never touches the canvas itself.
 export function ScanFrameOverlay({ active, className }: ScanFrameOverlayProps) {
-  const corner = 'absolute h-7 w-7 border-accent/85 drop-shadow-[0_0_6px_hsl(var(--accent)/0.55)] sm:h-9 sm:w-9'
+  // Gold toned down by request (round: "เอฟเฟคสีเหลืองออกหน่อย") — lower border
+  // opacity, a much softer/tighter glow, and a fainter scan-line than the
+  // first pass, so the frame still reads as gold accenting but no longer
+  // dominates the view.
+  const corner = 'absolute h-7 w-7 border-accent/55 drop-shadow-[0_0_3px_hsl(var(--accent)/0.3)] sm:h-9 sm:w-9'
   return (
     <div className={cn('pointer-events-none absolute inset-3 sm:inset-4', className)} aria-hidden>
       <div className={cn(corner, 'left-0 top-0 rounded-tl-xl border-l-[3px] border-t-[3px]')} />
@@ -22,7 +26,7 @@ export function ScanFrameOverlay({ active, className }: ScanFrameOverlayProps) {
       <div className={cn(corner, 'bottom-0 right-0 rounded-br-xl border-b-[3px] border-r-[3px]')} />
       {active && (
         <div className="absolute inset-0 overflow-hidden rounded-xl">
-          <div className="animate-scan-line absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-accent/50 to-transparent" />
+          <div className="animate-scan-line absolute inset-x-0 h-8 bg-gradient-to-b from-transparent via-accent/25 to-transparent" />
         </div>
       )}
     </div>
