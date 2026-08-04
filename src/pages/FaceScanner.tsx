@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAppData } from '@/hooks/useAppData'
-import { recordCheckin, hasCheckedInToday } from '@/lib/store'
+import { recordCheckin, recordLatestScan, hasCheckedInToday } from '@/lib/store'
 import {
   distanceToConfidence,
   averageEyeAspectRatio,
@@ -34,6 +34,7 @@ import {
   CONFIRM_HOLD_MS,
   nextMatchStreak,
   streakHeldMs,
+  captureFaceSnapshot,
   type MatchStreak,
 } from '@/lib/faceEngine'
 import { useFaceCamera } from '@/hooks/useFaceCamera'
@@ -149,6 +150,17 @@ export default function FaceScanner() {
         const alreadyToday = hasCheckedInToday(checkins, member.id)
         if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !alreadyToday) {
           lastCheckinRef.current[member.id] = Date.now()
+          // Feeds the "ภาพล่าสุดจากการสแกน" review badge on the member's
+          // face-registration page — same clean-frame capture the meeting
+          // scanner uses, so the daily kiosk check-in gets the same
+          // re-enrollment-candidate data it never had before. Non-critical:
+          // a failure here shouldn't affect the check-in itself.
+          if (camera.videoRef.current) {
+            const snapshot = captureFaceSnapshot(camera.videoRef.current, face.box)
+            if (snapshot) {
+              recordLatestScan(member.id, Array.from(face.descriptor), snapshot).catch(() => {})
+            }
+          }
           recordCheckin(member, 'face', distanceToConfidence(bestMatch!.distance))
             .then(() => {
               setFeedback({ kind: 'success', name: member.name, department: member.department, position: member.position })

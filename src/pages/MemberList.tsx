@@ -33,7 +33,15 @@ import {
 } from '@/components/ui/select'
 import { UserPlus, ScanFace, Pencil, Trash2, CheckCircle2, CircleDashed, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
-import { addMember, updateMember, deleteMember, registerFace, getMemberPhotos } from '@/lib/store'
+import {
+  addMember,
+  updateMember,
+  deleteMember,
+  registerFace,
+  getMemberPhotos,
+  promoteLatestScan,
+  discardLatestScan,
+} from '@/lib/store'
 import type { Member, MemberRole } from '@/lib/types'
 import FaceCaptureDialog from '@/components/FaceCaptureDialog'
 import { cn } from '@/lib/utils'
@@ -265,6 +273,27 @@ export default function MemberList() {
     }
   }
 
+  async function handlePromoteLatestScan(descriptor: number[], photo: string) {
+    if (!faceDialogMember) return
+    try {
+      await promoteLatestScan(faceDialogMember.id, descriptor, photo)
+      setPhotos((prev) => ({ ...prev, [faceDialogMember.id]: photo }))
+      toast.success(`ใช้ภาพล่าสุดแทนการลงทะเบียนของ ${faceDialogMember.name} แล้ว`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ไม่สามารถใช้ภาพล่าสุดแทนการลงทะเบียนได้')
+    }
+  }
+
+  async function handleDiscardLatestScan() {
+    if (!faceDialogMember) return
+    try {
+      await discardLatestScan(faceDialogMember.id)
+      toast.success('ลบภาพล่าสุดที่รอตรวจสอบแล้ว')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ไม่สามารถลบภาพล่าสุดได้')
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Same animated เลือดหมู-แดง-ทอง backdrop as /#/login, `fixed` so it
@@ -399,11 +428,22 @@ export default function MemberList() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="gap-1.5"
+                        className="relative gap-1.5"
                         onClick={() => setFaceDialogMember(m)}
                       >
                         <ScanFace className="h-3.5 w-3.5" />
                         <span className="hidden md:inline">ใบหน้า</span>
+                        {/* Pending "latest scan" review badge — see
+                            Member.latestScanPhotoUrl. A confirmed check-in
+                            scan is waiting for an admin to approve/discard
+                            it on the face-registration dialog. */}
+                        {m.latestScanPhotoUrl && (
+                          <span
+                            className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-card"
+                            title="มีภาพล่าสุดจากการสแกนรอตรวจสอบ"
+                            aria-hidden
+                          />
+                        )}
                       </Button>
                       <Button size="icon" variant="ghost" onClick={() => openEditForm(m)}>
                         <Pencil className="h-4 w-4" />
@@ -531,6 +571,16 @@ export default function MemberList() {
           memberName={faceDialogMember.name}
           onOpenChange={(o) => !o && setFaceDialogMember(null)}
           onCaptured={handleFaceCaptured}
+          pendingScan={
+            faceDialogMember.latestScanDescriptor && faceDialogMember.latestScanPhotoUrl
+              ? {
+                  descriptor: faceDialogMember.latestScanDescriptor,
+                  photoUrl: faceDialogMember.latestScanPhotoUrl,
+                }
+              : null
+          }
+          onPromotePendingScan={handlePromoteLatestScan}
+          onDiscardPendingScan={handleDiscardLatestScan}
         />
       )}
     </div>

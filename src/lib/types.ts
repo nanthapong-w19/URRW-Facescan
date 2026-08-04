@@ -15,6 +15,15 @@ export interface Member {
   faceStatus: FaceStatus
   faceDescriptor: number[] | null
   photo: string | null // data URL captured during registration
+  // Descriptor + cropped face photo from this member's most recent
+  // *confirmed* face-match check-in (either daily kiosk or per-meeting) —
+  // separate from faceDescriptor/photo above, which only ever change
+  // through an explicit registration action. Null until their first
+  // confirmed scan; an admin reviews it on the face-registration page
+  // (FaceCaptureDialog) and can promote it to replace the registered
+  // descriptor/photo, or discard it — never applied automatically.
+  latestScanDescriptor: number[] | null
+  latestScanPhotoUrl: string | null
   createdAt: string
 }
 
@@ -56,6 +65,8 @@ export interface MemberRow {
   role: MemberRole
   photo_url: string | null
   face_descriptor: number[] | null
+  latest_scan_descriptor: number[] | null
+  latest_scan_photo_url: string | null
   registered_at: string | null
   created_at: string
   updated_at: string
