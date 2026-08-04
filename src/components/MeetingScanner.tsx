@@ -438,7 +438,7 @@ export default function MeetingScanner({
                 ref={camera.canvasRef}
                 className={cn('h-full w-full object-cover', camera.cameraState !== 'ready' && 'hidden')}
               />
-              {camera.cameraState === 'ready' && <ScanFrameOverlay active={!feedback} />}
+              {camera.cameraState === 'ready' && <ScanFrameOverlay />}
               {confirmProgress > 0 && confirmProgress < 1 && !feedback && (
                 <div className="absolute inset-x-0 bottom-0 bg-blue-600/90 px-4 py-2 text-center text-sm font-medium text-white backdrop-blur-sm">
                   <p className="mb-1.5">ตรวจพบใบหน้าตรงกัน กรุณาอยู่นิ่งๆ เพื่อยืนยัน...</p>

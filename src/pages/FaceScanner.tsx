@@ -291,7 +291,7 @@ export default function FaceScanner() {
                   (camera.cameraState === 'loading' || camera.cameraState === 'error') && 'hidden'
                 )}
               />
-              {camera.cameraState === 'ready' && <ScanFrameOverlay active={!feedback} />}
+              {camera.cameraState === 'ready' && <ScanFrameOverlay />}
 
               {showFrameWarning && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto bg-slate-900/95 p-4 text-center sm:p-6">
