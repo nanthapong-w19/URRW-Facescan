@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CheckinSuccessToast } from '@/components/CheckinSuccessToast'
-import { ScanFrameOverlay } from '@/components/ScanFrameOverlay'
 import { PulseDot } from '@/components/PulseDot'
 import { CheckinIdentity } from '@/components/CheckinIdentity'
 import {
@@ -465,7 +464,6 @@ export default function MeetingScanner({
                 ref={camera.canvasRef}
                 className={cn('h-full w-full object-cover', camera.cameraState !== 'ready' && 'hidden')}
               />
-              {camera.cameraState === 'ready' && <ScanFrameOverlay />}
               {confirmProgress > 0 && confirmProgress < 1 && !feedback && (
                 <div className="absolute inset-x-0 bottom-0 bg-blue-600/90 px-4 py-2 text-center text-sm font-medium text-white backdrop-blur-sm">
                   <p className="mb-1.5">ตรวจพบใบหน้าตรงกัน กรุณาอยู่นิ่งๆ เพื่อยืนยัน...</p>
@@ -588,7 +586,6 @@ export default function MeetingScanner({
                           position={r.position}
                           department={r.department}
                           photo={r.photoUrl}
-                          checkOverlay
                           theme="fullscreen"
                           subtitleSuffix={r.time}
                         />
@@ -609,7 +606,6 @@ export default function MeetingScanner({
                         position={r.position}
                         department={r.department}
                         photo={r.photoUrl}
-                        checkOverlay
                         theme="default"
                         subtitleSuffix={r.time}
                       />

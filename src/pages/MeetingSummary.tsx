@@ -334,7 +334,7 @@ export default function MeetingSummary() {
                 actually watched; windowed mode keeps the plain <li> since
                 nobody's staring at that list waiting for arrivals. */}
             <AnimatePresence initial={false} mode={isFullscreen ? 'popLayout' : 'sync'}>
-              {recentCheckins.map((c, i) =>
+              {recentCheckins.map((c) =>
                 isFullscreen ? (
                   <motion.li
                     key={c.id}
@@ -350,7 +350,6 @@ export default function MeetingSummary() {
                       position={c.position}
                       department={c.department}
                       photo={c.photoUrl}
-                      highlightRing={i === 0}
                     />
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <CheckinMethodBadge method={c.method} manualLabel="เช็คอินด้วยรหัส" />
@@ -364,7 +363,6 @@ export default function MeetingSummary() {
                       position={c.position}
                       department={c.department}
                       photo={c.photoUrl}
-                      highlightRing={i === 0}
                     />
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <CheckinMethodBadge method={c.method} manualLabel="เช็คอินด้วยรหัส" />
