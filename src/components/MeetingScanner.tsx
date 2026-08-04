@@ -67,25 +67,50 @@ export function streakHeldMs(streak: MatchStreak, now: number): number {
   return streak.memberId ? now - streak.since : 0
 }
 
-// Crops a small face thumbnail out of the canvas the moment a check-in is
-// confirmed, so "เช็คอินล่าสุด" can show what was actually scanned instead of
-// just a name. `box` is in the *unmirrored* video coordinates the detector
-// returns, but the canvas itself is painted mirrored (see useCameraStream's
-// paint loop), so the crop's x has to be mirrored the same way the
-// on-canvas name label already is. Returns null if the box ends up outside
-// the canvas bounds (shouldn't normally happen, but a stale box from a
-// just-lost face could briefly disagree with the canvas's current size).
+// Draws a fresh mirrored frame straight from the live <video> element —
+// deliberately NOT the on-screen <canvas>, which also has the live
+// match-box + name label painted onto it every tick (see useCameraStream's
+// paint loop) — so a captured check-in photo is a clean face shot with no
+// scan-box/label baked into the saved pixels. Same "mirror the still
+// capture to match the selfie-view preview" approach FaceCaptureDialog.tsx
+// already uses for face *registration* photos; this just reuses it for the
+// check-in capture path below.
+function captureCleanMirroredFrame(video: HTMLVideoElement): HTMLCanvasElement | null {
+  const vw = video.videoWidth
+  const vh = video.videoHeight
+  if (!vw || !vh) return null
+  const frame = document.createElement('canvas')
+  frame.width = vw
+  frame.height = vh
+  const ctx = frame.getContext('2d')
+  if (!ctx) return null
+  ctx.translate(vw, 0)
+  ctx.scale(-1, 1)
+  ctx.drawImage(video, 0, 0, vw, vh)
+  return frame
+}
+
+// Crops a small face thumbnail out of a clean mirrored frame the moment a
+// check-in is confirmed, so "เช็คอินล่าสุด" can show what was actually
+// scanned instead of just a name. `box` is in the *unmirrored* video
+// coordinates the detector returns, but the frame itself is mirrored (see
+// captureCleanMirroredFrame above), so the crop's x has to be mirrored to
+// match. Returns null if the box ends up outside the frame's bounds
+// (shouldn't normally happen, but a stale box from a just-lost face could
+// briefly disagree with the video's current size).
 function captureFaceSnapshot(
-  canvas: HTMLCanvasElement,
+  video: HTMLVideoElement,
   box: { x: number; y: number; width: number; height: number }
 ): string | null {
+  const frame = captureCleanMirroredFrame(video)
+  if (!frame) return null
   const padX = box.width * 0.35
   const padY = box.height * 0.35
-  const mirroredX = canvas.width - box.x - box.width
+  const mirroredX = frame.width - box.x - box.width
   const sx = Math.max(0, mirroredX - padX)
   const sy = Math.max(0, box.y - padY)
-  const sw = Math.min(canvas.width - sx, box.width + padX * 2)
-  const sh = Math.min(canvas.height - sy, box.height + padY * 2)
+  const sw = Math.min(frame.width - sx, box.width + padX * 2)
+  const sh = Math.min(frame.height - sy, box.height + padY * 2)
   if (sw <= 0 || sh <= 0) return null
 
   const size = 220
@@ -99,22 +124,24 @@ function captureFaceSnapshot(
   const scale = Math.max(size / sw, size / sh)
   const dw = sw * scale
   const dh = sh * scale
-  ctx.drawImage(canvas, sx, sy, sw, sh, (size - dw) / 2, (size - dh) / 2, dw, dh)
+  ctx.drawImage(frame, sx, sy, sw, sh, (size - dw) / 2, (size - dh) / 2, dw, dh)
   return out.toDataURL('image/jpeg', 0.82)
 }
 
 // Manual (employee-code) check-in has no detected face box to anchor a crop
 // on — the camera may even be off, since manual is the fallback for when
 // scanning doesn't work. When it IS on, this grabs a plain center-square
-// crop of whatever's live in frame at the moment the check-in button is
-// pressed (good enough: whoever is typing their code is standing in front
-// of the camera), instead of running a second face-detection pass just for
-// a photo.
-function captureCenterSquareSnapshot(canvas: HTMLCanvasElement): string | null {
-  const side = Math.min(canvas.width, canvas.height)
+// crop of a clean mirrored frame (same no-overlay reasoning as
+// captureFaceSnapshot above) at the moment the check-in button is pressed
+// (good enough: whoever is typing their code is standing in front of the
+// camera), instead of running a second face-detection pass just for a photo.
+function captureCenterSquareSnapshot(video: HTMLVideoElement): string | null {
+  const frame = captureCleanMirroredFrame(video)
+  if (!frame) return null
+  const side = Math.min(frame.width, frame.height)
   if (side <= 0) return null
-  const sx = (canvas.width - side) / 2
-  const sy = (canvas.height - side) / 2
+  const sx = (frame.width - side) / 2
+  const sy = (frame.height - side) / 2
 
   const size = 220
   const out = document.createElement('canvas')
@@ -122,7 +149,7 @@ function captureCenterSquareSnapshot(canvas: HTMLCanvasElement): string | null {
   out.height = size
   const ctx = out.getContext('2d')
   if (!ctx) return null
-  ctx.drawImage(canvas, sx, sy, side, side, 0, 0, size, size)
+  ctx.drawImage(frame, sx, sy, side, side, 0, 0, size, size)
   return out.toDataURL('image/jpeg', 0.82)
 }
 
@@ -195,7 +222,7 @@ export default function MeetingScanner({
         const lastTime = lastMatchRef.current[participant.memberId] ?? 0
         if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !checkedInIds.has(participant.memberId)) {
           lastMatchRef.current[participant.memberId] = Date.now()
-          const snapshot = camera.canvasRef.current ? captureFaceSnapshot(camera.canvasRef.current, face.box) : null
+          const snapshot = camera.videoRef.current ? captureFaceSnapshot(camera.videoRef.current, face.box) : null
           onMatch(participant, distance, snapshot ?? undefined)
           setFeedback({ name: participant.name, department: participant.department, position: participant.position, method: 'face' })
           matchStreakRef.current = { memberId: null, since: 0 }
@@ -502,8 +529,8 @@ export default function MeetingScanner({
                 }}
                 isFullscreen={isFullscreen}
                 capturePhoto={() =>
-                  camera.cameraState === 'ready' && camera.canvasRef.current
-                    ? captureCenterSquareSnapshot(camera.canvasRef.current)
+                  camera.cameraState === 'ready' && camera.videoRef.current
+                    ? captureCenterSquareSnapshot(camera.videoRef.current)
                     : null
                 }
               />
