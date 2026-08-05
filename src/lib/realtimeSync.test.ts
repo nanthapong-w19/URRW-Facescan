@@ -12,8 +12,6 @@ const member: Member = {
   faceStatus: 'registered',
   faceDescriptor: [0, 0, 0],
   photo: null,
-  latestScanDescriptor: null,
-  latestScanPhotoUrl: null,
   createdAt: '2026-01-01T00:00:00Z',
 }
 
@@ -27,8 +25,6 @@ const memberRow: MemberRow = {
   role: 'user',
   photo_url: null,
   face_descriptor: null,
-  latest_scan_descriptor: null,
-  latest_scan_photo_url: null,
   registered_at: null,
   created_at: '2026-01-02T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',

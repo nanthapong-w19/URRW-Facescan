@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAppData } from '@/hooks/useAppData'
-import { recordCheckin, recordLatestScan, hasCheckedInToday } from '@/lib/store'
+import { recordCheckin, hasCheckedInToday } from '@/lib/store'
 import {
   distanceToConfidence,
   averageEyeAspectRatio,
@@ -34,7 +34,6 @@ import {
   CONFIRM_HOLD_MS,
   nextMatchStreak,
   streakHeldMs,
-  captureFaceSnapshot,
   type MatchStreak,
 } from '@/lib/faceEngine'
 import { useFaceCamera } from '@/hooks/useFaceCamera'
@@ -150,17 +149,6 @@ export default function FaceScanner() {
         const alreadyToday = hasCheckedInToday(checkins, member.id)
         if (Date.now() - lastTime > REPEAT_COOLDOWN_MS && !alreadyToday) {
           lastCheckinRef.current[member.id] = Date.now()
-          // Feeds the "ภาพล่าสุดจากการสแกน" review badge on the member's
-          // face-registration page — same clean-frame capture the meeting
-          // scanner uses, so the daily kiosk check-in gets the same
-          // re-enrollment-candidate data it never had before. Non-critical:
-          // a failure here shouldn't affect the check-in itself.
-          if (camera.videoRef.current) {
-            const snapshot = captureFaceSnapshot(camera.videoRef.current, face.box)
-            if (snapshot) {
-              recordLatestScan(member.id, Array.from(face.descriptor), snapshot).catch(() => {})
-            }
-          }
           recordCheckin(member, 'face', distanceToConfidence(bestMatch!.distance))
             .then(() => {
               setFeedback({ kind: 'success', name: member.name, department: member.department, position: member.position })
@@ -354,7 +342,11 @@ export default function FaceScanner() {
 
               {feedback?.kind === 'success' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-emerald-600/90 text-white backdrop-blur-sm animate-in fade-in zoom-in-95">
-                  <CheckCircle2 className="h-14 w-14" />
+                  <div className="relative flex h-20 w-20 items-center justify-center">
+                    <span aria-hidden className="absolute inset-0 rounded-full border-2 border-white/70 animate-scan-success-ring" />
+                    <span aria-hidden className="absolute inset-0 rounded-full bg-white/15 animate-scan-success-pop" />
+                    <CheckCircle2 className="relative h-14 w-14 animate-scan-success-pop" />
+                  </div>
                   <p className="font-display text-2xl font-bold">เช็คอินสำเร็จ</p>
                   <p className="text-lg">{feedback.name}</p>
                   <p className="text-sm text-white/80">

@@ -23,7 +23,7 @@ import {
   Maximize2,
   Minimize2,
 } from 'lucide-react'
-import { getMeeting, getMeetingCheckins } from '@/lib/store'
+import { getMeeting, getMeetingCheckins, getMemberPhotosByIds } from '@/lib/store'
 import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
 import type { RealtimeChange } from '@/lib/realtimeSync'
 import { useRealtimeChannel } from '@/hooks/useRealtimeChannel'
@@ -136,6 +136,12 @@ export default function MeetingSummary() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // Registered face photos for the present/absent/all-participants panels
+  // below, keyed by memberId — fetched separately from `meeting` itself
+  // (see getMemberPhotosByIds), same "don't bulk-load photo_url into the
+  // meeting query" reasoning as MeetingDetail.tsx's own `photos` state.
+  const [photos, setPhotos] = useState<Record<string, string | null>>({})
+
   // Fullscreen just enlarges the page for projecting on a meeting-room
   // screen — panels still hide/show per click like the windowed view.
   useEffect(() => {
@@ -215,6 +221,21 @@ export default function MeetingSummary() {
 
   const checkinByMember = useMemo(() => new Map(checkins.map((c) => [c.memberId, c])), [checkins])
   const participants = useMemo(() => meeting?.participants ?? [], [meeting])
+
+  useEffect(() => {
+    if (participants.length === 0) return
+    let cancelled = false
+    getMemberPhotosByIds(participants.map((p) => p.memberId))
+      .then((map) => {
+        if (!cancelled) setPhotos(map)
+      })
+      .catch(() => {
+        // non-critical: avatars just fall back to initials if this fails
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [participants])
   // Live feed for the "เช็คอินล่าสุด" card up top — driven straight off the
   // same realtime `checkins` state the rest of this page uses (see the
   // postgres_changes subscription above), newest first. Windowed mode caps
@@ -690,7 +711,7 @@ export default function MeetingSummary() {
                     return (
                       <li key={p.memberId} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                         <div className="flex min-w-0 items-center gap-3">
-                          <InitialsAvatar name={p.name} photo={checkin.photoUrl} />
+                          <InitialsAvatar name={p.name} photo={checkin.photoUrl ?? photos[p.memberId]} />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                             <p className="truncate text-xs text-muted-foreground">
@@ -725,7 +746,7 @@ export default function MeetingSummary() {
               <ul className="divide-y divide-border/70">
                 {absentParticipants.map((p) => (
                   <li key={p.memberId} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                    <InitialsAvatar name={p.name} variant="muted" />
+                    <InitialsAvatar name={p.name} photo={photos[p.memberId]} variant="muted" />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
@@ -760,7 +781,7 @@ export default function MeetingSummary() {
                       className="flex items-center justify-between gap-2.5 rounded-xl border border-border/70 px-3 py-2.5"
                     >
                       <div className="flex min-w-0 items-center gap-2.5">
-                        <InitialsAvatar name={p.name} />
+                        <InitialsAvatar name={p.name} photo={photos[p.memberId]} />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                           <p className="truncate text-xs text-muted-foreground">

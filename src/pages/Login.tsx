@@ -1,13 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ShieldCheck } from 'lucide-react'
+import { ShieldCheck, CheckCircle2 } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
-import type { Member } from '@/lib/types'
+import type { Member, MemberRole } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 // Face-scan camera removed from this page per request — the manual
 // employee-ID form below is now the only way to log in. It still records a
@@ -21,11 +22,30 @@ export default function Login() {
   const redirectTo = (location.state as { from?: string } | null)?.from ?? '/meetings'
 
   const [matchedName, setMatchedName] = useState<string | null>(null)
+  const [matchedRole, setMatchedRole] = useState<MemberRole | null>(null)
   const [manualId, setManualId] = useState('')
   const [manualError, setManualError] = useState('')
+  // Bumped on every failed submit, even when the message text repeats
+  // back-to-back — see the shakeFieldRef effect below for why a plain class
+  // name isn't enough to replay the animation on a second identical error.
+  const [errorPulse, setErrorPulse] = useState(0)
+  const shakeFieldRef = useRef<HTMLDivElement>(null)
+
+  // Recognizes a fully-typed, known employee ID before the button is even
+  // pressed — members is already fetched for handleManualLogin's own lookup
+  // below, so this reuses that same in-memory list rather than adding a
+  // request. Only fires on a complete match (not on every keystroke prefix)
+  // so it reads as recognition, not a distracting filter-as-you-type list.
+  const trimmedManualId = manualId.trim()
+  const matchedPreview = useMemo(
+    () => (trimmedManualId ? members.find((m) => m.employeeId.toLowerCase() === trimmedManualId.toLowerCase()) ?? null : null),
+    [members, trimmedManualId]
+  )
+  const previewGranted = !!matchedPreview && (matchedPreview.role === 'admin' || matchedPreview.role === 'viewer')
 
   function completeLogin(member: Member) {
     setMatchedName(member.name)
+    setMatchedRole(member.role)
     loginAsAdmin(member)
     toast.success(`เข้าสู่ระบบสำเร็จ: ${member.name}`)
     // Round 45: the full-page success transition rendered from `matchedName`
@@ -35,24 +55,43 @@ export default function Login() {
     window.setTimeout(() => navigate(redirectTo, { replace: true }), 1300)
   }
 
+  function failManualLogin(message: string) {
+    setManualError(message)
+    setErrorPulse((n) => n + 1)
+  }
+
   function handleManualLogin() {
     setManualError('')
     const id = manualId.trim()
     if (!id) {
-      setManualError('กรุณากรอกรหัสบุคลากร')
+      failManualLogin('กรุณากรอกรหัสบุคลากร')
       return
     }
     const member = members.find((m) => m.employeeId.toLowerCase() === id.toLowerCase())
     if (!member) {
-      setManualError('ไม่พบรหัสบุคลากรนี้ในระบบ')
+      failManualLogin('ไม่พบรหัสบุคลากรนี้ในระบบ')
       return
     }
     if (member.role !== 'admin' && member.role !== 'viewer') {
-      setManualError('รหัสบุคลากรนี้ไม่มีสิทธิ์เข้าสู่ระบบ (admin หรือ ผู้แสดงผล)')
+      failManualLogin('รหัสบุคลากรนี้ไม่มีสิทธิ์เข้าสู่ระบบ (admin หรือ ผู้แสดงผล)')
       return
     }
     completeLogin(member)
   }
+
+  // Imperative class toggle (not a conditional className) so a second wrong
+  // code in a row still replays the shake even though `manualError`'s text
+  // — and therefore a plain className tied to it — wouldn't otherwise
+  // change. Targets the field wrapper only, not the whole card, since the
+  // error text right below it already explains what's wrong.
+  useEffect(() => {
+    if (errorPulse === 0) return
+    const el = shakeFieldRef.current
+    if (!el) return
+    el.classList.remove('animate-login-shake')
+    void el.offsetWidth
+    el.classList.add('animate-login-shake')
+  }, [errorPulse])
 
   return (
     // Breaks out of <main>'s max-w-7xl/px-*/py-8 box to a true edge-to-edge,
@@ -135,14 +174,17 @@ export default function Login() {
             <CardDescription className="text-center">ระบบเช็คอินราชกัญญาฯ</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="space-y-1">
+            <div ref={shakeFieldRef} className="space-y-1">
               <Input
                 id="manual-id"
                 aria-label="เข้าสู่ระบบด้วยรหัสผู้ดูแล"
                 aria-invalid={manualError ? true : undefined}
-                aria-describedby={manualError ? 'manual-id-error' : undefined}
+                aria-describedby={manualError ? 'manual-id-error' : previewGranted ? 'manual-id-match' : undefined}
                 value={manualId}
-                onChange={(e) => setManualId(e.target.value)}
+                onChange={(e) => {
+                  setManualId(e.target.value)
+                  setManualError('')
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleManualLogin()}
                 placeholder="กรอกรหัสบุคลากร"
                 autoComplete="off"
@@ -161,6 +203,18 @@ export default function Login() {
                 {manualError}
               </p>
             )}
+            {/* Live recognition, not a submit-time result — appears the
+                moment a full valid code is typed so the button press feels
+                like confirming something already known rather than a guess
+                sent off into the network. */}
+            {!manualError && previewGranted && matchedPreview && (
+              <p
+                id="manual-id-match"
+                className="flex animate-login-match-in items-center justify-center gap-1.5 text-xs font-medium text-emerald-600"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" /> พบคุณแล้ว: {matchedPreview.name}
+              </p>
+            )}
             <Button
               size="lg"
               onClick={handleManualLogin}
@@ -168,8 +222,11 @@ export default function Login() {
               // เลือดหมู-ทอง hover sweep, applied directly here since this
               // page is deliberately excluded from the shared .themed-pages
               // hover treatment in index.css (Login uses its own bespoke
-              // maroon/gold styling for its Card/Button elements).
-              className="w-full bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(350_55%_22%)_55%,hsl(var(--accent))_140%)] bg-[length:180%_180%] bg-[position:0%_0%] transition-[background-position] duration-500 hover:bg-[position:100%_100%]"
+              // maroon/gold styling for its Card/Button elements). active:
+              // scale gives the tap itself a felt response — this page runs
+              // on a touchscreen kiosk as much as a mouse, and touch has no
+              // hover state to carry that feedback instead.
+              className="w-full bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(350_55%_22%)_55%,hsl(var(--accent))_140%)] bg-[length:180%_180%] bg-[position:0%_0%] transition-[background-position,transform] duration-500 hover:bg-[position:100%_100%] active:scale-[0.98]"
             >
               เข้าสู่ระบบ
             </Button>
@@ -210,6 +267,25 @@ export default function Login() {
               ยินดีต้อนรับ
             </p>
             <p className="text-lg text-white/90">{matchedName}</p>
+            {/* Names the specific access this login unlocked — this is the
+                one thing the welcome moment can say that no other product's
+                success screen could say unchanged, and it's information the
+                admin/viewer can actually use going in, not just decoration.
+                Reuses MemberList.tsx's own admin=accent/viewer=sky role
+                colors so the two logged-in roles read consistently
+                everywhere they appear in the app. */}
+            {matchedRole && (
+              <span
+                className={cn(
+                  'mt-0.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium',
+                  matchedRole === 'admin'
+                    ? 'border-accent/40 bg-accent/15 text-accent'
+                    : 'border-sky-400/40 bg-sky-400/15 text-sky-200'
+                )}
+              >
+                {matchedRole === 'admin' ? 'ผู้ดูแลระบบ · จัดการการประชุมได้เต็มรูปแบบ' : 'ผู้แสดงผล · ดูข้อมูลการประชุมได้'}
+              </span>
+            )}
             <p className="mt-2 text-xs text-white/60">กำลังพาไปหน้าการประชุม...</p>
           </div>
         </div>

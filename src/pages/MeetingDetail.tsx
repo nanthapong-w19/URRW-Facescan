@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -30,7 +30,7 @@ import {
   X,
   ClipboardList,
 } from 'lucide-react'
-import { getMeeting, deleteMeeting, getMeetingCheckins, recordMeetingCheckin, updateMeeting } from '@/lib/store'
+import { getMeeting, deleteMeeting, getMeetingCheckins, getMemberPhotosByIds, recordMeetingCheckin, updateMeeting } from '@/lib/store'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { MATCH_THRESHOLD } from '@/lib/faceEngine'
 import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
@@ -112,7 +112,81 @@ export default function MeetingDetail() {
   const [deleting, setDeleting] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
+  // Registered face photos for the participant grid below, keyed by
+  // memberId — fetched separately from `meeting` itself (see
+  // getMemberPhotosByIds) rather than joined into the meeting query, same
+  // "don't bulk-load photo_url" reasoning as MemberList.tsx's own `photos`
+  // state.
+  const [photos, setPhotos] = useState<Record<string, string | null>>({})
+
   const checkedInIds = useMemo(() => new Set(checkins.map((c) => c.memberId)), [checkins])
+
+  // Joined into one stable string so this only refetches when the actual
+  // participant *list* changes, not on every `meeting` object identity
+  // change (saveField below replaces `meeting` wholesale on every edit,
+  // e.g. just updating the location, which never touches participants).
+  const participantIdsKey = useMemo(
+    () => (meeting?.participants ?? []).map((p) => p.memberId).join(','),
+    [meeting]
+  )
+
+  useEffect(() => {
+    if (!participantIdsKey) return
+    let cancelled = false
+    getMemberPhotosByIds(participantIdsKey.split(','))
+      .then((map) => {
+        if (!cancelled) setPhotos(map)
+      })
+      .catch(() => {
+        // non-critical: rows just fall back to initials if this fails
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [participantIdsKey])
+
+  // Momentary confirmation on the participant grid below when someone's
+  // check-in lands — from this admin's own scan, or from a *different*
+  // device scanning the same meeting via the realtime subscription above.
+  // Skipped on first load (prevCheckedInIdsRef starts empty) so opening
+  // this page doesn't flash everyone who was already checked in before the
+  // admin got here — only genuinely new arrivals during this viewing.
+  const [flashedIds, setFlashedIds] = useState<Set<string>>(new Set())
+  const prevCheckedInIdsRef = useRef<Set<string>>(new Set())
+  const flashTimeoutsRef = useRef<Map<string, number>>(new Map())
+
+  useEffect(() => {
+    const prev = prevCheckedInIdsRef.current
+    if (prev.size > 0) {
+      const newlyChecked: string[] = []
+      checkedInIds.forEach((memberId) => {
+        if (!prev.has(memberId)) newlyChecked.push(memberId)
+      })
+      if (newlyChecked.length > 0) {
+        setFlashedIds((cur) => new Set([...cur, ...newlyChecked]))
+        newlyChecked.forEach((memberId) => {
+          const existing = flashTimeoutsRef.current.get(memberId)
+          if (existing) window.clearTimeout(existing)
+          const timeoutId = window.setTimeout(() => {
+            setFlashedIds((cur) => {
+              const next = new Set(cur)
+              next.delete(memberId)
+              return next
+            })
+            flashTimeoutsRef.current.delete(memberId)
+          }, 1600)
+          flashTimeoutsRef.current.set(memberId, timeoutId)
+        })
+      }
+    }
+    prevCheckedInIdsRef.current = checkedInIds
+  }, [checkedInIds])
+
+  useEffect(() => {
+    return () => {
+      flashTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
+    }
+  }, [])
 
   useEffect(() => {
     if (!id) return
@@ -514,9 +588,15 @@ export default function MeetingDetail() {
               {meeting.participants.map((p) => {
                 const checkin = checkins.find((c) => c.memberId === p.memberId)
                 return (
-                  <div key={p.memberId} className="flex items-center justify-between gap-2.5 rounded-xl border border-border/70 px-3 py-2.5">
+                  <div
+                    key={p.memberId}
+                    className={cn(
+                      'flex items-center justify-between gap-2.5 rounded-xl border border-border/70 px-3 py-2.5 transition-colors duration-700',
+                      flashedIds.has(p.memberId) && 'border-emerald-500/40 bg-emerald-500/10'
+                    )}
+                  >
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <InitialsAvatar name={p.name} />
+                      <InitialsAvatar name={p.name} photo={photos[p.memberId]} />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
                         <p className="truncate text-xs text-muted-foreground">

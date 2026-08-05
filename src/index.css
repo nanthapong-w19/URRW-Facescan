@@ -321,6 +321,107 @@
   }
 }
 
+/* /#/login's live employee-ID recognition: as the admin/viewer types their
+   code, a match against the already-fetched roster (no extra request — see
+   Login.tsx) surfaces instantly instead of waiting for the submit round
+   trip. Same staff type the same code at this kiosk every day; the payoff
+   is a quiet confirmation the moment it's typed correctly, not a generic
+   celebration. */
+@keyframes login-match-in {
+  from {
+    transform: translateY(4px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.animate-login-match-in {
+  animation: login-match-in 0.25s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-login-match-in {
+    animation: none;
+  }
+}
+
+/* Wrong-code recovery: a short, small-amplitude shake on the input field
+   itself (not the whole card — the error text right below it already says
+   what's wrong) so a rejected code reads as a physical "no" instead of just
+   a color change. Retriggered imperatively per attempt from Login.tsx since
+   the same error string can repeat back-to-back and a class name alone
+   wouldn't replay the animation twice in a row. */
+@keyframes login-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+.animate-login-shake {
+  animation: login-shake 0.35s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-login-shake {
+    animation: none;
+  }
+}
+
+/* /#/scan's per-check-in success overlay (daily kiosk) — this is the app's
+   single highest-frequency moment: PRODUCT.md's whole reason face-scan
+   exists over a paper sign-in sheet is proxy-prevention + speed, and this
+   overlay is shown unattended dozens of times a day, so it earns more than
+   a plain fade. The icon container pop uses the same smooth ease-out curve
+   as animate-login-card-in (no bounce/elastic — real deceleration reads as
+   more confident than a springy overshoot on a screen this frequently
+   seen); the ring is new to this surface — one one-shot sonar-style burst
+   behind the icon, not a loop, so it reads as a decisive confirmation
+   rather than a spinner. */
+@keyframes scan-success-pop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes scan-success-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+.animate-scan-success-pop {
+  animation: scan-success-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-scan-success-ring {
+  animation: scan-success-ring 0.7s 0.05s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-scan-success-pop,
+  .animate-scan-success-ring {
+    animation: none;
+  }
+}
+
 /* Page-level entrance animation, applied once to each route's own content
    wrapper (round: "ทุกหน้ามี animation ที่เหมาะสม") — a brief fade + gentle
    rise on mount, CSS-only (transform+opacity, GPU-composited, no

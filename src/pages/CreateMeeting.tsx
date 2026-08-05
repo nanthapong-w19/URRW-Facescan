@@ -19,13 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, CalendarPlus, CalendarDays, Clock } from 'lucide-react'
+import { Users, CalendarPlus, CalendarDays, Clock, CheckCircle2 } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { createMeeting } from '@/lib/store'
 import { MEETING_ROOMS } from '@/lib/constants'
 import { parseThaiDateInput, formatThaiDateInput } from '@/lib/thaiCalendar'
 import { parseTimeInput, autoFormatSegmented } from '@/lib/dateTimeInput'
+import { cn } from '@/lib/utils'
 
 // 24-hour "HH:mm" — the everyday Thai convention (no am/pm split).
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
@@ -355,15 +356,29 @@ export default function CreateMeeting() {
             <CardTitle className="font-display flex items-center gap-2 text-base">
               <Users className="h-4 w-4 text-primary" /> เลือกบุคลากรที่เข้าร่วม
             </CardTitle>
-            <CardDescription>เลือกแล้ว {selectedIds.size} คน จากทั้งหมด {members.length} คน</CardDescription>
+            {/* The selected count is the one number this card exists to
+                report — this list runs to 150+ rows (see PRODUCT.md), so an
+                admin bulk-inviting a whole department needs to confirm
+                "how many so far" without counting checkboxes. Coloring just
+                that number (accent once non-zero, muted at zero) makes it
+                the thing the eye lands on first in this line. */}
+            <CardDescription>
+              เลือกแล้ว{' '}
+              <span className={cn('font-semibold', selectedIds.size > 0 ? 'text-accent' : 'text-muted-foreground')}>
+                {selectedIds.size}
+              </span>{' '}
+              คน จากทั้งหมด {members.length} คน
+            </CardDescription>
           </div>
           <Button
             type="button"
-            variant="outline"
+            variant={allSelected ? 'default' : 'outline'}
             size="sm"
             onClick={toggleSelectAll}
             disabled={members.length === 0}
+            className="gap-1.5"
           >
+            {allSelected && <CheckCircle2 className="h-3.5 w-3.5" />}
             {allSelected ? 'ยกเลิกทั้งหมด' : 'เลือกทั้งหมด'}
           </Button>
         </CardHeader>

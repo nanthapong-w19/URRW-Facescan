@@ -27,7 +27,6 @@ import {
   captureFaceSnapshot,
   type MatchStreak,
 } from '@/lib/faceEngine'
-import { recordLatestScan } from '@/lib/store'
 import {
   getFullscreenElement,
   requestFullscreen,
@@ -145,14 +144,6 @@ export default function MeetingScanner({
           lastMatchRef.current[participant.memberId] = Date.now()
           const snapshot = camera.videoRef.current ? captureFaceSnapshot(camera.videoRef.current, face.box) : null
           onMatch(participant, distance, snapshot ?? undefined)
-          // Feeds the "ภาพล่าสุดจากการสแกน" review badge on the member's
-          // face-registration page — reuses the same snapshot just captured
-          // for the check-in record, no extra capture cost. Non-critical:
-          // a failure here shouldn't affect the check-in itself, so it's
-          // swallowed rather than surfaced as an error.
-          if (snapshot) {
-            recordLatestScan(participant.memberId, Array.from(face.descriptor), snapshot).catch(() => {})
-          }
           setFeedback({ name: participant.name, department: participant.department, position: participant.position, method: 'face' })
           matchStreakRef.current = { memberId: null, since: 0 }
           setConfirmProgress(0)

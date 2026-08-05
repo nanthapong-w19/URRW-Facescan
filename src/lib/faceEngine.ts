@@ -204,11 +204,11 @@ export function streakHeldMs(streak: MatchStreak, now: number): number {
 
 // --- Clean (no-overlay) face snapshots -------------------------------------
 //
-// Originally lived only in MeetingScanner.tsx; moved here once a third
-// consumer (FaceScanner.tsx, for the "latest scan" review feature) needed
-// the exact same capture. FaceCaptureDialog.tsx's own registration capture
-// reuses captureCleanMirroredFrame too (it wants the whole mirrored frame,
-// not a face-box crop, so it doesn't use captureFaceSnapshot itself).
+// captureCleanMirroredFrame lives here so both MeetingScanner.tsx (via
+// captureFaceSnapshot, for the meeting check-in photo) and
+// FaceCaptureDialog.tsx's own registration capture (which wants the whole
+// mirrored frame, not a face-box crop, so it doesn't use captureFaceSnapshot
+// itself) can share the exact same capture.
 
 // Draws a fresh mirrored frame straight from the live <video> element —
 // deliberately NOT any on-screen <canvas>, which (on the two scan surfaces)

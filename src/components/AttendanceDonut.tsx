@@ -1,3 +1,6 @@
+import { useEffect } from 'react'
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
+
 // Shared gradient-ring donut used by both Dashboard.tsx (today's overall
 // rate) and MeetingSummary.tsx (per-meeting rate, windowed mode only —
 // fullscreen mode uses a horizontal gradient bar instead, see
@@ -16,6 +19,21 @@ export default function AttendanceDonut({
   const r = (size - stroke) / 2
   const circumference = 2 * Math.PI * r
   const offset = circumference * (1 - percent / 100)
+
+  // The ring itself already animates its sweep on mount/change (the
+  // transition- class below); this makes the center number count up in
+  // step with it instead of just snapping to the new digits, so the two
+  // read as one motion rather than a moving ring next to a static label.
+  // Fullscreen MeetingSummary already had this via its own AnimatedPercent
+  // — moved here so the windowed view (this component) isn't a lesser
+  // experience of the same stat.
+  const motionValue = useMotionValue(0)
+  const spring = useSpring(motionValue, { stiffness: 90, damping: 20 })
+  const rounded = useTransform(spring, (v) => `${Math.round(v)}%`)
+
+  useEffect(() => {
+    motionValue.set(percent)
+  }, [motionValue, percent])
 
   return (
     <div className="relative flex aspect-square h-full max-h-[168px] w-full max-w-[168px] items-center justify-center">
@@ -41,7 +59,7 @@ export default function AttendanceDonut({
         />
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className="font-display text-3xl font-bold text-foreground">{percent}%</span>
+        <motion.span className="font-display text-3xl font-bold text-foreground">{rounded}</motion.span>
         <span className="text-xs text-muted-foreground">{label}</span>
       </div>
     </div>

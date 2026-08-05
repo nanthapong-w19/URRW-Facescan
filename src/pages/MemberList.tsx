@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
   Table,
@@ -39,8 +39,6 @@ import {
   deleteMember,
   registerFace,
   getMemberPhotos,
-  promoteLatestScan,
-  discardLatestScan,
 } from '@/lib/store'
 import type { Member, MemberRole } from '@/lib/types'
 import FaceCaptureDialog from '@/components/FaceCaptureDialog'
@@ -59,7 +57,7 @@ const DEPARTMENTS = [
   'ภาษาต่างประเทศ',
   'กิจกรรมแนะแนว',
   'ฝ่ายบริหาร',
-  'บุคลากรทางการศึกษา',
+  'เจ้าหน้าที่สำนักงาน',
 ]
 
 const POSITIONS = [
@@ -163,6 +161,26 @@ export default function MemberList() {
   const [faceDialogMember, setFaceDialogMember] = useState<Member | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Member | null>(null)
 
+  // Momentary confirmation for the row a completed add/edit/face-registration
+  // just touched — this table runs to 150+ rows in daily use (see PRODUCT.md),
+  // so a toast alone doesn't say *which* row changed once it's scrolled or
+  // sorted away from view. Cleared automatically; never a state the admin has
+  // to dismiss themselves.
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const highlightTimeoutRef = useRef<number | null>(null)
+
+  function flashRow(id: string) {
+    if (highlightTimeoutRef.current) window.clearTimeout(highlightTimeoutRef.current)
+    setHighlightedId(id)
+    highlightTimeoutRef.current = window.setTimeout(() => setHighlightedId(null), 1600)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) window.clearTimeout(highlightTimeoutRef.current)
+    }
+  }, [])
+
   // Photos are deliberately NOT part of useAppData's shared roster (they're
   // 60-120KB each, versus ~1KB for a face descriptor — see MEMBER_COLUMNS
   // in store.ts) so this is the one page that actually shows them fetching
@@ -183,21 +201,30 @@ export default function MemberList() {
     }
   }, [])
 
+  const visibleMembers = useMemo(
+    () => members.filter((m) => !HIDDEN_EMPLOYEE_IDS.includes(m.employeeId.toLowerCase())),
+    [members]
+  )
+
   const filtered = useMemo(() => {
-    const result = members.filter((m) => {
-      if (HIDDEN_EMPLOYEE_IDS.includes(m.employeeId.toLowerCase())) return false
-      return (
+    const result = visibleMembers.filter(
+      (m) =>
         !query ||
         m.name.toLowerCase().includes(query.toLowerCase()) ||
         m.employeeId.toLowerCase().includes(query.toLowerCase())
-      )
-    })
+    )
     if (sortKey) {
       const dir = sortDir === 'asc' ? 1 : -1
-      result.sort((a, b) => sortValue(a, sortKey).localeCompare(sortValue(b, sortKey), 'th') * dir)
+      // numeric: true makes "107" sort before "1014" by their numeric
+      // value — plain localeCompare treats employeeId as text, so mixed
+      // 3-digit (001-155ish) and 4-digit (1001+) codes came out wrong
+      // (e.g. "107" landing after "1014" since '0' < '7' beat digit count).
+      result.sort(
+        (a, b) => sortValue(a, sortKey).localeCompare(sortValue(b, sortKey), 'th', { numeric: true }) * dir
+      )
     }
     return result
-  }, [members, query, sortKey, sortDir])
+  }, [visibleMembers, query, sortKey, sortDir])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -236,9 +263,11 @@ export default function MemberList() {
       if (editingId) {
         await updateMember(editingId, { ...form })
         toast.success('แก้ไขข้อมูลบุคลากรเรียบร้อย')
+        flashRow(editingId)
       } else {
-        await addMember({ ...form })
+        const created = await addMember({ ...form })
         toast.success('เพิ่มบุคลากรใหม่เรียบร้อย')
+        flashRow(created.id)
       }
       setFormOpen(false)
     } catch (err) {
@@ -268,29 +297,9 @@ export default function MemberList() {
       // realtime-synced roster from useAppData.
       setPhotos((prev) => ({ ...prev, [faceDialogMember.id]: updated.photo }))
       toast.success(`ลงทะเบียนใบหน้าของ ${faceDialogMember.name} สำเร็จ`)
+      flashRow(faceDialogMember.id)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ลงทะเบียนใบหน้าไม่สำเร็จ')
-    }
-  }
-
-  async function handlePromoteLatestScan(descriptor: number[], photo: string) {
-    if (!faceDialogMember) return
-    try {
-      await promoteLatestScan(faceDialogMember.id, descriptor, photo)
-      setPhotos((prev) => ({ ...prev, [faceDialogMember.id]: photo }))
-      toast.success(`ใช้ภาพล่าสุดแทนการลงทะเบียนของ ${faceDialogMember.name} แล้ว`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'ไม่สามารถใช้ภาพล่าสุดแทนการลงทะเบียนได้')
-    }
-  }
-
-  async function handleDiscardLatestScan() {
-    if (!faceDialogMember) return
-    try {
-      await discardLatestScan(faceDialogMember.id)
-      toast.success('ลบภาพล่าสุดที่รอตรวจสอบแล้ว')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'ไม่สามารถลบภาพล่าสุดได้')
     }
   }
 
@@ -371,12 +380,34 @@ export default function MemberList() {
               {filtered.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                    ไม่พบบุคลากรที่ตรงกับเงื่อนไข
+                    {/* Two different empty states share this row: a truly
+                        empty roster (first use — orient toward the one
+                        action that fixes it) versus a search with zero
+                        matches (recovery — the fix is clearing the search,
+                        not adding a person who probably already exists). */}
+                    {visibleMembers.length === 0 ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <p>ยังไม่มีบุคลากรในระบบ</p>
+                        <Button size="sm" onClick={openAddForm} className="gap-1.5">
+                          <UserPlus className="h-3.5 w-3.5" /> เพิ่มบุคลากรคนแรก
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2">
+                        <p>ไม่พบบุคลากรที่ตรงกับ &quot;{query}&quot;</p>
+                        <Button variant="ghost" size="sm" onClick={() => setQuery('')} className="h-7 text-xs">
+                          ล้างการค้นหา
+                        </Button>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               )}
               {filtered.map((m) => (
-                <TableRow key={m.id} className="group">
+                <TableRow
+                  key={m.id}
+                  className={cn('group transition-colors duration-700', highlightedId === m.id && 'bg-emerald-500/10')}
+                >
                   <TableCell className="text-sm text-muted-foreground">{m.employeeId}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-3">
@@ -433,17 +464,6 @@ export default function MemberList() {
                       >
                         <ScanFace className="h-3.5 w-3.5" />
                         <span className="hidden md:inline">ใบหน้า</span>
-                        {/* Pending "latest scan" review badge — see
-                            Member.latestScanPhotoUrl. A confirmed check-in
-                            scan is waiting for an admin to approve/discard
-                            it on the face-registration dialog. */}
-                        {m.latestScanPhotoUrl && (
-                          <span
-                            className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-card"
-                            title="มีภาพล่าสุดจากการสแกนรอตรวจสอบ"
-                            aria-hidden
-                          />
-                        )}
                       </Button>
                       <Button size="icon" variant="ghost" onClick={() => openEditForm(m)}>
                         <Pencil className="h-4 w-4" />
@@ -571,16 +591,6 @@ export default function MemberList() {
           memberName={faceDialogMember.name}
           onOpenChange={(o) => !o && setFaceDialogMember(null)}
           onCaptured={handleFaceCaptured}
-          pendingScan={
-            faceDialogMember.latestScanDescriptor && faceDialogMember.latestScanPhotoUrl
-              ? {
-                  descriptor: faceDialogMember.latestScanDescriptor,
-                  photoUrl: faceDialogMember.latestScanPhotoUrl,
-                }
-              : null
-          }
-          onPromotePendingScan={handlePromoteLatestScan}
-          onDiscardPendingScan={handleDiscardLatestScan}
         />
       )}
     </div>

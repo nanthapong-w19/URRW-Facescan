@@ -14,11 +14,16 @@ import type { Meeting } from '@/lib/types'
 
 // checkedInCount/participants.length as a percentage, shown per meeting
 // card. Guards the 0-participants case (would otherwise be 0/0 → NaN%).
-function attendanceRate(meeting: Meeting): { percent: number; label: string } {
+// Split into percent + a separate count label (rather than one combined
+// string) so the card can give the percentage its own larger, bolder
+// treatment — it's the one number an admin scanning a grid of cards
+// actually needs, and it used to share type size/weight with everything
+// else on the card.
+function attendanceRate(meeting: Meeting): { percent: number; countLabel: string } {
   const total = meeting.participants.length
-  if (total === 0) return { percent: 0, label: 'ยังไม่มีผู้เข้าร่วม' }
+  if (total === 0) return { percent: 0, countLabel: 'ยังไม่มีผู้เข้าร่วม' }
   const percent = Math.round((meeting.checkedInCount / total) * 100)
-  return { percent, label: `${meeting.checkedInCount}/${total} คน (${percent}%)` }
+  return { percent, countLabel: `${meeting.checkedInCount}/${total} คน` }
 }
 
 function formatMeetingTime(iso: string | null) {
@@ -123,14 +128,15 @@ export default function MeetingList() {
                         </Badge>
                         <span className="min-w-0 truncate text-right text-xs text-muted-foreground">โดย {meeting.createdByName || 'ไม่ทราบ'}</span>
                       </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1 text-muted-foreground">
+                      <div className="space-y-1.5">
+                        <div className="flex items-end justify-between gap-2">
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <CheckCircle2 className="h-3 w-3" /> อัตราการเข้าประชุม
                           </span>
-                          <span className="font-medium text-foreground">{attendance.label}</span>
+                          <span className="font-display text-xl font-bold leading-none text-foreground">{attendance.percent}%</span>
                         </div>
                         <Progress value={attendance.percent} className="h-1.5" />
+                        <p className="text-right text-[11px] text-muted-foreground">{attendance.countLabel}</p>
                       </div>
                     </CardContent>
                   </Card>

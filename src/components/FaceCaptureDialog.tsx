@@ -10,8 +10,6 @@ import {
   SwitchCamera,
   ShieldAlert,
   ImagePlus,
-  History,
-  Trash2,
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCameraStream } from '@/hooks/useCameraStream'
@@ -34,15 +32,6 @@ interface FaceCaptureDialogProps {
   memberName: string
   onOpenChange: (open: boolean) => void
   onCaptured: (descriptor: number[], photo: string) => void
-  // Descriptor + photo from this member's most recent *confirmed* scan
-  // check-in (see Member.latestScanDescriptor/latestScanPhotoUrl) — null
-  // when they have none pending. When present, the dialog opens on a
-  // review screen (approve/discard) instead of jumping straight into the
-  // live camera, since this data already exists and re-scanning it would
-  // be redundant.
-  pendingScan?: { descriptor: number[]; photoUrl: string } | null
-  onPromotePendingScan?: (descriptor: number[], photoUrl: string) => void
-  onDiscardPendingScan?: () => void
 }
 
 const MODEL_LOAD_ERROR_MESSAGE =
@@ -78,9 +67,6 @@ export default function FaceCaptureDialog({
   memberName,
   onOpenChange,
   onCaptured,
-  pendingScan,
-  onPromotePendingScan,
-  onDiscardPendingScan,
 }: FaceCaptureDialogProps) {
   const camera = useCameraStream({ modelLoadErrorMessage: MODEL_LOAD_ERROR_MESSAGE })
   const detectRafRef = useRef<number | null>(null)
@@ -93,29 +79,15 @@ export default function FaceCaptureDialog({
   // cleared on open and on retake, grows one at a time as handleCapture
   // fires, averaged into `captured` once it reaches ENROLL_SHOTS.
   const [shots, setShots] = useState<number[][]>([])
-  // 'review' shows the pending-scan approve/discard screen instead of the
-  // camera — only entered when there's actually a pendingScan to review.
-  // "ลงทะเบียนใหม่ด้วยกล้อง" below switches this to 'capture' mid-session.
-  const [mode, setMode] = useState<'review' | 'capture'>(pendingScan ? 'review' : 'capture')
 
   useEffect(() => {
     if (!open) return
     setCaptured(null)
     setCaptureErrorMsg('')
     setShots([])
-    if (pendingScan) {
-      setMode('review')
-    } else {
-      setMode('capture')
-      camera.start()
-    }
+    camera.start()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
-
-  function startCapture() {
-    setMode('capture')
-    camera.start()
-  }
 
   // Own presence-check loop: unlike useFaceCamera's throttled candidate
   // matching, this dialog only needs "is any face in frame right now" to
@@ -216,17 +188,6 @@ export default function FaceCaptureDialog({
     camera.start(camera.activeDeviceId)
   }
 
-  function handlePromotePendingScan() {
-    if (!pendingScan) return
-    onPromotePendingScan?.(pendingScan.descriptor, pendingScan.photoUrl)
-    onOpenChange(false)
-  }
-
-  function handleDiscardPendingScan() {
-    onDiscardPendingScan?.()
-    onOpenChange(false)
-  }
-
   const showFrameWarning = camera.cameraState === 'ready' && (camera.trackMuted || camera.noFrames || camera.blackFrames)
   const scanning = camera.cameraState === 'ready' && !captured
 
@@ -235,156 +196,119 @@ export default function FaceCaptureDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display flex items-center gap-2">
-            {mode === 'review' ? <History className="h-5 w-5 text-primary" /> : <ScanFace className="h-5 w-5 text-primary" />}
-            {mode === 'review' ? 'ภาพล่าสุดจากการสแกน' : 'ลงทะเบียนใบหน้า'}
+            <ScanFace className="h-5 w-5 text-primary" />
+            ลงทะเบียนใบหน้า
           </DialogTitle>
-          <DialogDescription>
-            {mode === 'review'
-              ? `${memberName} มีภาพจากการเช็คอินล่าสุดที่ยังไม่ได้ตรวจสอบ`
-              : `สำหรับสมาชิก: ${memberName}`}
-          </DialogDescription>
+          <DialogDescription>สำหรับสมาชิก: {memberName}</DialogDescription>
         </DialogHeader>
 
-        {mode === 'review' && pendingScan && (
-          <div className="space-y-3">
-            <div className="mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-2xl bg-slate-900">
-              <img src={pendingScan.photoUrl} alt="ภาพล่าสุดจากการสแกน" className="h-full w-full object-cover" />
-            </div>
-            <p className="text-center text-xs text-muted-foreground">
-              ภาพนี้ถ่ายจากการเช็คอินด้วยใบหน้าครั้งล่าสุดที่ยืนยันตัวตนสำเร็จ — ไม่ได้ถูกใช้แทนข้อมูลลงทะเบียนเดิมโดยอัตโนมัติ
-              เลือกได้ว่าจะใช้แทน หรือไม่ใช้ก็ได้
-            </p>
-          </div>
+        {scanning && camera.devices.length > 1 && (
+          <Select value={camera.activeDeviceId} onValueChange={(id) => camera.start(id)}>
+            <SelectTrigger className="h-8 text-xs">
+              <SwitchCamera className="me-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <SelectValue placeholder="เลือกกล้อง" />
+            </SelectTrigger>
+            <SelectContent>
+              {camera.devices.map((d, i) => (
+                <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
+                  {d.label || `กล้อง ${i + 1}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
 
-        {mode === 'capture' && (
-          <>
-            {scanning && camera.devices.length > 1 && (
-              <Select value={camera.activeDeviceId} onValueChange={(id) => camera.start(id)}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SwitchCamera className="me-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <SelectValue placeholder="เลือกกล้อง" />
-                </SelectTrigger>
-                <SelectContent>
-                  {camera.devices.map((d, i) => (
-                    <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
-                      {d.label || `กล้อง ${i + 1}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+        <div className="relative mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-2xl bg-slate-900">
+          {!captured && camera.cameraState === 'loading' && (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-white/80">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <p className="text-xs">กำลังเตรียมกล้องและโมเดล...</p>
+            </div>
+          )}
 
-            <div className="relative mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-2xl bg-slate-900">
-              {!captured && camera.cameraState === 'loading' && (
-                <div className="flex h-full flex-col items-center justify-center gap-2 text-white/80">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                  <p className="text-xs">กำลังเตรียมกล้องและโมเดล...</p>
-                </div>
-              )}
+          {!captured && camera.cameraState === 'error' && (
+            <div className="flex h-full flex-col items-center justify-center gap-2 overflow-y-auto p-4 text-center text-white/80">
+              <AlertTriangle className="h-6 w-6 shrink-0 text-amber-400" />
+              <p className="text-xs leading-relaxed">{camera.errorMsg}</p>
+            </div>
+          )}
 
-              {!captured && camera.cameraState === 'error' && (
-                <div className="flex h-full flex-col items-center justify-center gap-2 overflow-y-auto p-4 text-center text-white/80">
-                  <AlertTriangle className="h-6 w-6 shrink-0 text-amber-400" />
-                  <p className="text-xs leading-relaxed">{camera.errorMsg}</p>
-                </div>
-              )}
+          {/* <video> is only a decode source for the paint loop; the visible
+              surface is always the canvas below (except for the final
+              still photo once captured). */}
+          <video
+            ref={camera.videoRef}
+            muted
+            playsInline
+            webkit-playsinline="true"
+            className="absolute -left-full -top-full h-px w-px opacity-0"
+          />
 
-              {/* <video> is only a decode source for the paint loop; the visible
-                  surface is always the canvas below (except for the final
-                  still photo once captured). */}
-              <video
-                ref={camera.videoRef}
-                muted
-                playsInline
-                webkit-playsinline="true"
-                className="absolute -left-full -top-full h-px w-px opacity-0"
+          {(scanning || captured) && (
+            <>
+              <canvas
+                ref={camera.canvasRef}
+                className={cn('h-full w-full object-cover', captured && 'hidden')}
               />
-
-              {(scanning || captured) && (
-                <>
-                  <canvas
-                    ref={camera.canvasRef}
-                    className={cn('h-full w-full object-cover', captured && 'hidden')}
-                  />
-                  {captured && (
-                    <img src={captured.photo} className="h-full w-full object-cover" alt="ใบหน้าที่บันทึก" />
-                  )}
-                  {scanning && !showFrameWarning && (
-                    <div
-                      className={cn(
-                        'absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-medium backdrop-blur',
-                        faceDetected ? 'bg-emerald-500/90 text-white' : 'bg-black/50 text-white/80'
-                      )}
-                    >
-                      {faceDetected
-                        ? `ตรวจพบใบหน้า พร้อมถ่ายภาพที่ ${shots.length + 1}/${ENROLL_SHOTS}`
-                        : 'กำลังค้นหาใบหน้า...'}
-                    </div>
-                  )}
-                  {captured && (
-                    <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-medium text-white">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> บันทึกใบหน้าแล้ว
-                    </div>
-                  )}
-                </>
+              {captured && (
+                <img src={captured.photo} className="h-full w-full object-cover" alt="ใบหน้าที่บันทึก" />
               )}
-
-              {showFrameWarning && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto bg-slate-900/95 p-4 text-center">
-                  <ShieldAlert className="h-6 w-6 shrink-0 text-amber-400" />
-                  {camera.blackFrames && !camera.noFrames && !camera.trackMuted ? (
-                    <p className="text-xs leading-relaxed text-white/90">
-                      กล้องเชื่อมต่อและส่งภาพมาจริง แต่เนื้อหาของภาพเป็นสีดำสนิท — ไม่ใช่ปัญหาจากตัวแอปนี้
-                      แต่เป็นระบบปฏิบัติการหรือซอฟต์แวร์ความปลอดภัยของเครื่องนี้เองที่ปิดกั้นภาพจริงไว้
-                      แนะนำให้ปิดหน้าต่างนี้แล้วใช้เช็คอินแบบ Manual แทนสำหรับเครื่องนี้ไปก่อน
-                    </p>
-                  ) : (
-                    <p className="text-xs leading-relaxed text-white/90">
-                      เชื่อมต่อกล้องสำเร็จแต่ไม่มีสัญญาณภาพส่งมา มักเกิดจากซอฟต์แวร์ป้องกันเว็บแคมบล็อกไว้
-                      ลองปิดการป้องกันชั่วคราว หรือปิดหน้าต่างนี้แล้วใช้เช็คอินแบบ Manual แทน
-                    </p>
+              {scanning && !showFrameWarning && (
+                <div
+                  className={cn(
+                    'absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-medium backdrop-blur',
+                    faceDetected ? 'bg-emerald-500/90 text-white' : 'bg-black/50 text-white/80'
                   )}
+                >
+                  {faceDetected
+                    ? `ตรวจพบใบหน้า พร้อมถ่ายภาพที่ ${shots.length + 1}/${ENROLL_SHOTS}`
+                    : 'กำลังค้นหาใบหน้า...'}
                 </div>
+              )}
+              {captured && (
+                <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-medium text-white">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> บันทึกใบหน้าแล้ว
+                </div>
+              )}
+            </>
+          )}
+
+          {showFrameWarning && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-y-auto bg-slate-900/95 p-4 text-center">
+              <ShieldAlert className="h-6 w-6 shrink-0 text-amber-400" />
+              {camera.blackFrames && !camera.noFrames && !camera.trackMuted ? (
+                <p className="text-xs leading-relaxed text-white/90">
+                  กล้องเชื่อมต่อและส่งภาพมาจริง แต่เนื้อหาของภาพเป็นสีดำสนิท — ไม่ใช่ปัญหาจากตัวแอปนี้
+                  แต่เป็นระบบปฏิบัติการหรือซอฟต์แวร์ความปลอดภัยของเครื่องนี้เองที่ปิดกั้นภาพจริงไว้
+                  แนะนำให้ปิดหน้าต่างนี้แล้วใช้เช็คอินแบบ Manual แทนสำหรับเครื่องนี้ไปก่อน
+                </p>
+              ) : (
+                <p className="text-xs leading-relaxed text-white/90">
+                  เชื่อมต่อกล้องสำเร็จแต่ไม่มีสัญญาณภาพส่งมา มักเกิดจากซอฟต์แวร์ป้องกันเว็บแคมบล็อกไว้
+                  ลองปิดการป้องกันชั่วคราว หรือปิดหน้าต่างนี้แล้วใช้เช็คอินแบบ Manual แทน
+                </p>
               )}
             </div>
+          )}
+        </div>
 
-            {scanning && !showFrameWarning && (
-              <>
-                <p className="text-center text-sm font-medium text-foreground">
-                  ภาพที่ {shots.length + 1} จาก {ENROLL_SHOTS}: {SHOT_PROMPTS[shots.length]}
-                </p>
-                <p className="text-center text-xs text-muted-foreground">
-                  ถ้าภาพเป็นสีดำสนิท ลองเลือกกล้องอื่นจากเมนูด้านบน (บางเครื่องมีกล้อง IR สำหรับ Windows Hello ด้วย)
-                </p>
-              </>
-            )}
-
-            {captureErrorMsg && scanning && (
-              <p className="text-center text-xs text-destructive">{captureErrorMsg}</p>
-            )}
+        {scanning && !showFrameWarning && (
+          <>
+            <p className="text-center text-sm font-medium text-foreground">
+              ภาพที่ {shots.length + 1} จาก {ENROLL_SHOTS}: {SHOT_PROMPTS[shots.length]}
+            </p>
+            <p className="text-center text-xs text-muted-foreground">
+              ถ้าภาพเป็นสีดำสนิท ลองเลือกกล้องอื่นจากเมนูด้านบน (บางเครื่องมีกล้อง IR สำหรับ Windows Hello ด้วย)
+            </p>
           </>
         )}
 
+        {captureErrorMsg && scanning && (
+          <p className="text-center text-xs text-destructive">{captureErrorMsg}</p>
+        )}
+
         <DialogFooter className="gap-2 sm:justify-center">
-          {mode === 'review' && (
-            <>
-              <Button
-                variant="outline"
-                onClick={handleDiscardPendingScan}
-                className="gap-1.5 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4" /> ไม่ใช้ ลบทิ้ง
-              </Button>
-              <Button variant="outline" onClick={startCapture} className="gap-1.5">
-                <ScanFace className="h-4 w-4" /> ลงทะเบียนใหม่ด้วยกล้อง
-              </Button>
-              <Button onClick={handlePromotePendingScan} className="gap-1.5">
-                <CheckCircle2 className="h-4 w-4" /> ใช้ภาพนี้แทนการลงทะเบียน
-              </Button>
-            </>
-          )}
-          {mode === 'capture' && scanning && (
+          {scanning && (
             <>
               <input
                 ref={fileInputRef}
@@ -401,7 +325,7 @@ export default function FaceCaptureDialog({
               </Button>
             </>
           )}
-          {mode === 'capture' && captured && (
+          {captured && (
             <>
               <Button variant="outline" onClick={handleRetake} className="gap-1.5">
                 <RotateCcw className="h-4 w-4" /> ถ่ายใหม่
@@ -411,7 +335,7 @@ export default function FaceCaptureDialog({
               </Button>
             </>
           )}
-          {mode === 'capture' && !captured && camera.cameraState === 'error' && (
+          {!captured && camera.cameraState === 'error' && (
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               ปิดหน้าต่าง
             </Button>

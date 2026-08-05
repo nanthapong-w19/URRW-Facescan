@@ -44,8 +44,6 @@ export function rowToMember(row: MemberRow): Member {
     // same `null`, which is what every caller of Member.photo already
     // treats as "no photo, fall back to initials" (see MemberList.tsx).
     photo: row.photo_url ?? null,
-    latestScanDescriptor: row.latest_scan_descriptor ?? null,
-    latestScanPhotoUrl: row.latest_scan_photo_url ?? null,
     createdAt: row.created_at,
   }
 }
@@ -130,14 +128,8 @@ function describeDbError(err: unknown): string {
 // ever displays a photo, so it's fetched there instead, on demand, via
 // getMemberPhotos() below — see the "column trimming" decision in the
 // architecture-review grilling session for the numbers behind this split.
-//
-// latest_scan_photo_url is a different case despite also being a photo: it's
-// a small 220x220 face-box crop (captureFaceSnapshot, quality 0.82 — a few
-// KB, not 60-120KB), and MemberList.tsx needs its mere presence for every
-// row to show the "pending review" badge without a second round trip — so
-// it's included here rather than trimmed the same way photo_url is.
 const MEMBER_COLUMNS =
-  'id, employee_id, name, email, department, position, role, face_descriptor, latest_scan_descriptor, latest_scan_photo_url, registered_at, created_at, updated_at'
+  'id, employee_id, name, email, department, position, role, face_descriptor, registered_at, created_at, updated_at'
 
 export async function getMembers(): Promise<Member[]> {
   const { data, error } = await supabase
@@ -155,6 +147,25 @@ export async function getMembers(): Promise<Member[]> {
 // still updates live via useAppData, only the thumbnail lags).
 export async function getMemberPhotos(): Promise<Record<string, string | null>> {
   const { data, error } = await supabase.from('facein_members').select('id, photo_url')
+  if (error) throw new Error(describeDbError(error))
+  const photos: Record<string, string | null> = {}
+  for (const row of data as { id: string; photo_url: string | null }[]) {
+    photos[row.id] = row.photo_url
+  }
+  return photos
+}
+
+// Same photo-only split as getMemberPhotos() above, scoped to one meeting's
+// participants instead of the whole roster — used by MeetingDetail.tsx and
+// MeetingSummary.tsx so their participant avatars can show a registered
+// face photo instead of just initials, without baking photo_url into
+// MEETING_PARTICIPANTS_SELECT_FULL (a meeting can have 100+ participants;
+// joining every one of their ~60-120KB photos into that query on every
+// meeting open would be the exact per-row photo cost getMemberPhotos' own
+// comment above describes, multiplied by a full roster's worth of people).
+export async function getMemberPhotosByIds(ids: string[]): Promise<Record<string, string | null>> {
+  if (ids.length === 0) return {}
+  const { data, error } = await supabase.from('facein_members').select('id, photo_url').in('id', ids)
   if (error) throw new Error(describeDbError(error))
   const photos: Record<string, string | null> = {}
   for (const row of data as { id: string; photo_url: string | null }[]) {
@@ -225,57 +236,6 @@ export async function registerFace(id: string, descriptor: number[], photo: stri
   const { data, error } = await supabase
     .from('facein_members')
     .update({ face_descriptor: descriptor, photo_url: photo, registered_at: new Date().toISOString() })
-    .eq('id', id)
-    .select('*')
-    .single()
-  if (error) throw new Error(describeDbError(error))
-  return rowToMember(data as MemberRow)
-}
-
-// Called from the two scan surfaces (FaceScanner.tsx, MeetingScanner.tsx)
-// on every *confirmed* face-match check-in — never overwrites
-// face_descriptor/photo_url (the actual registered data used for matching),
-// only this separate "most recent scan" pair, which an admin later reviews
-// on the face-registration page (see promoteLatestScan/discardLatestScan
-// below). Overwrites on every confirmed scan by design — only the single
-// most recent one is kept, no history/cap logic needed.
-export async function recordLatestScan(memberId: string, descriptor: number[], photoUrl: string): Promise<void> {
-  const { error } = await supabase
-    .from('facein_members')
-    .update({ latest_scan_descriptor: descriptor, latest_scan_photo_url: photoUrl })
-    .eq('id', memberId)
-  if (error) throw new Error(describeDbError(error))
-}
-
-// Admin-approved promotion of a member's latest scan into their actual
-// registered face data — the only path that ever moves data from
-// latest_scan_* into face_descriptor/photo_url, called from
-// FaceCaptureDialog.tsx's review screen. Clears latest_scan_* back to null
-// in the same update: once promoted, it's no longer "a pending scan to
-// review", it IS the registration now.
-export async function promoteLatestScan(id: string, descriptor: number[], photoUrl: string): Promise<Member> {
-  const { data, error } = await supabase
-    .from('facein_members')
-    .update({
-      face_descriptor: descriptor,
-      photo_url: photoUrl,
-      registered_at: new Date().toISOString(),
-      latest_scan_descriptor: null,
-      latest_scan_photo_url: null,
-    })
-    .eq('id', id)
-    .select('*')
-    .single()
-  if (error) throw new Error(describeDbError(error))
-  return rowToMember(data as MemberRow)
-}
-
-// Dismisses a pending latest scan without promoting it — clears the review
-// badge for this member. face_descriptor/photo_url are untouched.
-export async function discardLatestScan(id: string): Promise<Member> {
-  const { data, error } = await supabase
-    .from('facein_members')
-    .update({ latest_scan_descriptor: null, latest_scan_photo_url: null })
     .eq('id', id)
     .select('*')
     .single()
