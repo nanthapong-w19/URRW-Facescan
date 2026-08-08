@@ -77,6 +77,36 @@ export async function detectFaceWithDescriptor(
   }
 }
 
+export interface DetectedFaceLandmarksOnly {
+  box: { x: number; y: number; width: number; height: number }
+  landmarks: faceapi.FaceLandmarks68
+}
+
+// Same detection as detectFaceWithDescriptor but skips the recognition net
+// (withFaceDescriptor()), which is by far the most expensive stage of the
+// pipeline. Callers that only need presence/landmarks per tick — e.g. the
+// blink-liveness gate below, which must sample fast enough to catch a blink
+// that's over in a couple hundred ms — should use this instead so the RAF
+// loop isn't bottlenecked computing a 128-d descriptor it throws away every
+// frame. The descriptor is only ever needed once, at actual capture time.
+export async function detectFaceLandmarksOnly(
+  input: HTMLVideoElement | HTMLImageElement
+): Promise<DetectedFaceLandmarksOnly | null> {
+  const result = await faceapi.detectSingleFace(input, DETECTOR_OPTIONS).withFaceLandmarks()
+
+  if (!result) return null
+
+  return {
+    box: {
+      x: result.detection.box.x,
+      y: result.detection.box.y,
+      width: result.detection.box.width,
+      height: result.detection.box.height,
+    },
+    landmarks: result.landmarks,
+  }
+}
+
 // --- Liveness (blink) detection -------------------------------------------
 //
 // This is a lightweight, in-browser anti-spoofing check: it does NOT try to

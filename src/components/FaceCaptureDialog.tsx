@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCameraStream } from '@/hooks/useCameraStream'
 import {
   detectFaceWithDescriptor,
+  detectFaceLandmarksOnly,
   captureCleanMirroredFrame,
   averageEyeAspectRatio,
   nextLivenessState,
@@ -78,6 +79,10 @@ export default function FaceCaptureDialog({
   const livenessRef = useRef<LivenessState>({ eyesClosed: false, blinkAt: null })
   const [blinkOk, setBlinkOk] = useState(false)
   const [skipLiveness, setSkipLiveness] = useState(false)
+  // Guards the auto-capture-on-blink trigger below so it only fires once per
+  // scan session — without it, every tick after the blink stays "live" for
+  // LIVENESS_VALID_MS and would kick off another capture race.
+  const autoCapturedRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
@@ -86,6 +91,7 @@ export default function FaceCaptureDialog({
     livenessRef.current = { eyesClosed: false, blinkAt: null }
     setBlinkOk(false)
     setSkipLiveness(false)
+    autoCapturedRef.current = false
     camera.start()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -101,14 +107,19 @@ export default function FaceCaptureDialog({
       const video = camera.videoRef.current
       if (video && video.readyState >= 2) {
         try {
-          const result = await detectFaceWithDescriptor(video)
+          const result = await detectFaceLandmarksOnly(video)
           if (cancelled) return
           setFaceDetected(!!result)
           if (result) {
             const now = Date.now()
             const ear = averageEyeAspectRatio(result.landmarks)
             livenessRef.current = nextLivenessState(livenessRef.current, ear, now)
-            setBlinkOk(isLive(livenessRef.current.blinkAt, now))
+            const live = isLive(livenessRef.current.blinkAt, now)
+            setBlinkOk(live)
+            if (live && !autoCapturedRef.current) {
+              autoCapturedRef.current = true
+              void captureFromVideo(video)
+            }
           } else {
             livenessRef.current = { eyesClosed: false, blinkAt: null }
             setBlinkOk(false)
@@ -129,10 +140,10 @@ export default function FaceCaptureDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera.cameraState])
 
-  async function handleCapture() {
-    const video = camera.videoRef.current
-    if (!video) return
-    if (!skipLiveness && !blinkOk) return
+  // Shared by the auto-capture-on-blink trigger (tick loop above) and the
+  // manual "ถ่ายภาพ" button (still needed as a fallback when the user taps
+  // "ข้ามการตรวจสอบกระพริบตา").
+  async function captureFromVideo(video: HTMLVideoElement) {
     const result = await detectFaceWithDescriptor(video)
     if (!result) {
       setCaptureErrorMsg('ไม่พบใบหน้าในเฟรมนี้ กรุณาจัดใบหน้าให้อยู่ตรงกลางกล้องแล้วลองใหม่')
@@ -148,6 +159,13 @@ export default function FaceCaptureDialog({
     setCaptured({ descriptor: Array.from(result.descriptor), photo })
     if (detectRafRef.current) cancelAnimationFrame(detectRafRef.current)
     camera.stop()
+  }
+
+  async function handleCapture() {
+    const video = camera.videoRef.current
+    if (!video) return
+    if (!skipLiveness && !blinkOk) return
+    await captureFromVideo(video)
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -192,6 +210,7 @@ export default function FaceCaptureDialog({
     livenessRef.current = { eyesClosed: false, blinkAt: null }
     setBlinkOk(false)
     setSkipLiveness(false)
+    autoCapturedRef.current = false
     camera.start(camera.activeDeviceId)
   }
 
@@ -269,9 +288,11 @@ export default function FaceCaptureDialog({
                 >
                   {!faceDetected
                     ? 'กำลังค้นหาใบหน้า...'
-                    : skipLiveness || blinkOk
+                    : skipLiveness
                       ? 'ตรวจพบใบหน้า พร้อมถ่ายภาพ'
-                      : 'ตรวจพบใบหน้า กระพริบตาเพื่อยืนยันตัวตน'}
+                      : blinkOk
+                        ? 'กำลังถ่ายภาพ...'
+                        : 'ตรวจพบใบหน้า กระพริบตาเพื่อถ่ายภาพอัตโนมัติ'}
                 </div>
               )}
               {captured && (
