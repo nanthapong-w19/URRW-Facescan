@@ -4,8 +4,8 @@ import { detectFaceWithDescriptor, descriptorDistance, MATCH_THRESHOLD, MATCH_MA
 
 // Face-recognition module (see CONTEXT.md "Face camera"): layers a
 // throttled detection tick + candidate-matching on top of useCameraStream.
-// What a match *means* — liveness gate, hold-to-confirm streak, or nothing
-// at all — is deliberately NOT in here; that's the caller's `onTick`
+// What a match *means* — hold-to-confirm streak, or nothing at all — is
+// deliberately NOT in here; that's the caller's `onTick`
 // "tick policy" (see CONTEXT.md), since it genuinely differs per screen.
 
 const SCAN_INTERVAL_MS = 500

@@ -167,8 +167,18 @@ export function useCameraStream(options: UseCameraStreamOptions = {}) {
       }
       streamRef.current?.getTracks().forEach((t) => t.stop())
       try {
+        // width/height are `ideal`, not `exact` — the browser gets as close
+        // as the camera can do and never throws OverconstrainedError over
+        // resolution, so this is safe to request even from webcams that
+        // only do 640x480. Sharper source frames mean more detail survives
+        // into the detector/recognition nets, which otherwise cap out on
+        // whatever soft default resolution the browser picked.
+        const resolutionConstraint = { width: { ideal: 1280 }, height: { ideal: 720 } }
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: deviceId && !isRetryWithoutConstraints ? { deviceId: { exact: deviceId } } : { facingMode: 'user' },
+          video:
+            deviceId && !isRetryWithoutConstraints
+              ? { deviceId: { exact: deviceId }, ...resolutionConstraint }
+              : { facingMode: 'user', ...resolutionConstraint },
         })
         streamRef.current = stream
         if (videoRef.current) {

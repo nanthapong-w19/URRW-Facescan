@@ -20,7 +20,7 @@ export async function loadFaceModels(): Promise<void> {
 
   loadPromise = (async () => {
     await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
       faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
       faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
     ])
@@ -42,17 +42,15 @@ export interface DetectedFace {
   landmarks: faceapi.FaceLandmarks68
 }
 
-// inputSize bumped 320 -> 416 (accuracy round): tinyFaceDetector runs at a
-// fixed square input resolution, downscaling the real frame to fit — 320 was
-// soft enough to lose detail on a face that's smaller in frame (further from
-// the camera, or a wider kiosk shot), which costs the *recognition* net
-// descriptor quality even when the box itself was still found. 416 keeps
-// more of that detail at a still-modest per-frame cost (single detector
-// pass, not the full pipeline, and this only runs once per SCAN_INTERVAL_MS
-// tick, not every rendered frame).
-const DETECTOR_OPTIONS = new faceapi.TinyFaceDetectorOptions({
-  inputSize: 416,
-  scoreThreshold: 0.5,
+// Swapped from TinyFaceDetector to SsdMobilenetv1 (accuracy round): tiny's
+// fixed-resolution downscale was the detector-side accuracy ceiling — it
+// finds a box, but a softer one, which caps *recognition*-net descriptor
+// quality even when the box itself looked fine. SSD runs on the actual frame
+// resolution instead of a shrunk square, at the cost of being measurably
+// slower per detection — acceptable here since it only runs once per tick,
+// not every rendered frame.
+const DETECTOR_OPTIONS = new faceapi.SsdMobilenetv1Options({
+  minConfidence: 0.5,
 })
 
 export async function detectFaceWithDescriptor(
@@ -84,11 +82,10 @@ export interface DetectedFaceLandmarksOnly {
 
 // Same detection as detectFaceWithDescriptor but skips the recognition net
 // (withFaceDescriptor()), which is by far the most expensive stage of the
-// pipeline. Callers that only need presence/landmarks per tick — e.g. the
-// blink-liveness gate below, which must sample fast enough to catch a blink
-// that's over in a couple hundred ms — should use this instead so the RAF
-// loop isn't bottlenecked computing a 128-d descriptor it throws away every
-// frame. The descriptor is only ever needed once, at actual capture time.
+// pipeline. Callers that only need presence/landmarks per tick should use
+// this instead so the RAF loop isn't bottlenecked computing a 128-d
+// descriptor it throws away every frame. The descriptor is only ever needed
+// once, at actual capture time.
 export async function detectFaceLandmarksOnly(
   input: HTMLVideoElement | HTMLImageElement
 ): Promise<DetectedFaceLandmarksOnly | null> {
@@ -105,68 +102,6 @@ export async function detectFaceLandmarksOnly(
     },
     landmarks: result.landmarks,
   }
-}
-
-// --- Liveness (blink) detection -------------------------------------------
-//
-// This is a lightweight, in-browser anti-spoofing check: it does NOT try to
-// replace a real active-liveness SDK (which would inspect texture, depth, IR
-// reflections, etc). It only proves the tracked face has an eye that opens
-// and closes over time, which a static printed photo or a frozen video frame
-// held up to the webcam cannot do. That's enough to raise the bar for casual
-// spoofing on a trusted-network kiosk without adding any paid dependency.
-
-function pointDistance(a: faceapi.Point, b: faceapi.Point): number {
-  return Math.hypot(a.x - b.x, a.y - b.y)
-}
-
-// Eye Aspect Ratio (Soukupová & Čech, 2016). face-api.js's getLeftEye()/
-// getRightEye() each return 6 points in the same [corner, top, top, corner,
-// bottom, bottom] order the formula expects. Open eyes sit well above the
-// threshold below; closed eyes collapse the vertical distances toward 0.
-function eyeAspectRatio(eye: faceapi.Point[]): number {
-  if (eye.length < 6) return 1
-  const vertical1 = pointDistance(eye[1], eye[5])
-  const vertical2 = pointDistance(eye[2], eye[4])
-  const horizontal = pointDistance(eye[0], eye[3])
-  if (horizontal === 0) return 1
-  return (vertical1 + vertical2) / (2 * horizontal)
-}
-
-export function averageEyeAspectRatio(landmarks: faceapi.FaceLandmarks68): number {
-  const left = eyeAspectRatio(landmarks.getLeftEye())
-  const right = eyeAspectRatio(landmarks.getRightEye())
-  return (left + right) / 2
-}
-
-// Tuned against typical webcam distance/angle in the kiosk flow — open eyes
-// land around 0.25-0.35, a genuine blink dips well under 0.2.
-export const EAR_BLINK_THRESHOLD = 0.2
-
-// How long a detected blink keeps a tracked face "live" for. Wide enough to
-// bridge a couple of scan ticks around the blink itself, short enough that
-// holding up a static photo can't coast on a single lucky detection. Shared
-// by FaceScanner.tsx's per-tick check-in gate and FaceCaptureDialog.tsx's
-// registration capture gate.
-export const LIVENESS_VALID_MS = 4000
-
-export interface LivenessState {
-  eyesClosed: boolean
-  blinkAt: number | null
-}
-
-// Tracks eye-aspect-ratio across ticks and requires one real blink (closed
-// -> open transition) before a match counts as "live" — a static photo or
-// frozen video frame held up to the camera can never produce that
-// transition. Pure function so it's testable without a DOM/video element.
-export function nextLivenessState(state: LivenessState, ear: number, now: number): LivenessState {
-  if (ear < EAR_BLINK_THRESHOLD) return { ...state, eyesClosed: true }
-  if (state.eyesClosed) return { eyesClosed: false, blinkAt: now }
-  return state
-}
-
-export function isLive(blinkAt: number | null, now: number): boolean {
-  return blinkAt !== null && now - blinkAt < LIVENESS_VALID_MS
 }
 
 /** Euclidean distance between two face descriptors. Lower = more similar. */

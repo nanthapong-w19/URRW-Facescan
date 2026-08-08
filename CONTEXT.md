@@ -28,7 +28,7 @@ The caller-supplied `onTick` callback passed to **Face camera** — a
 per-site decision of what a match *means* and what to do about it, kept
 outside the module because it genuinely differs per screen:
 
-- **FaceScanner**: liveness/blink-gate before auto-checkin.
+- **FaceScanner**: hold-to-confirm streak before auto-checkin.
 - **MeetingScanner** (inside `MeetingDetail.tsx`): hold-to-confirm streak
   before auto-checkin.
 - **Login**: passive relabel only — matches are never acted on (deliberate;

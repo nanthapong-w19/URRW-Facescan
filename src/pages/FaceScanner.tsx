@@ -16,7 +16,6 @@ import {
   CameraOff,
   SwitchCamera,
   ShieldAlert,
-  Eye,
 } from 'lucide-react'
 import {
   Select,
@@ -26,17 +25,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAppData } from '@/hooks/useAppData'
+import { cleanDeviceLabel } from '@/lib/cameraHelpers'
 import { recordCheckin, hasCheckedInToday } from '@/lib/store'
 import {
   distanceToConfidence,
-  averageEyeAspectRatio,
   CONFIRM_HOLD_MS,
   nextMatchStreak,
   streakHeldMs,
-  nextLivenessState,
-  isLive,
   type MatchStreak,
-  type LivenessState,
 } from '@/lib/faceEngine'
 import { useFaceCamera } from '@/hooks/useFaceCamera'
 import type { Member } from '@/lib/types'
@@ -79,49 +75,32 @@ export default function FaceScanner() {
   const registeredMembers = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
 
   const lastCheckinRef = useRef<Record<string, number>>({})
-  const livenessRef = useRef<LivenessState>({
-    eyesClosed: false,
-    blinkAt: null,
-  })
   const matchStreakRef = useRef<MatchStreak>({ memberId: null, since: 0 })
 
   const [feedback, setFeedback] = useState<ScanFeedback>(null)
   const [manualQuery, setManualQuery] = useState('')
-  const [waitingForBlink, setWaitingForBlink] = useState(false)
 
-  // Tick policy (see CONTEXT.md "Tick policy"): two independent temporal
-  // gates must BOTH pass before a check-in fires — (1) liveness: track
-  // eye-aspect-ratio across ticks and require one real blink (closed ->
-  // open transition), which a static photo or frozen video frame held up to
-  // the camera can never produce; (2) a match-streak hold (accuracy round):
-  // the SAME candidate must keep matching for CONFIRM_HOLD_MS, not just on
-  // a single lucky tick — protects against detector jitter flipping between
-  // two visually similar registered faces for one frame. Same
-  // nextMatchStreak/streakHeldMs pair MeetingScanner.tsx uses for its own
-  // per-meeting check-in, shared via faceEngine.ts.
+  // Tick policy (see CONTEXT.md "Tick policy"): a match-streak hold
+  // (accuracy round) — the SAME candidate must keep matching for
+  // CONFIRM_HOLD_MS, not just on a single lucky tick — protects against
+  // detector jitter flipping between two visually similar registered faces
+  // for one frame. Same nextMatchStreak/streakHeldMs pair MeetingScanner.tsx
+  // uses for its own per-meeting check-in, shared via faceEngine.ts.
   const camera = useFaceCamera({
     candidates: registeredMembers,
     modelLoadErrorMessage: MODEL_LOAD_ERROR_MESSAGE,
     onTick: (result) => {
       if (!result) {
-        livenessRef.current = { eyesClosed: false, blinkAt: null }
         matchStreakRef.current = { memberId: null, since: 0 }
-        setWaitingForBlink(false)
         return null
       }
       const { face, bestMatch, isMatch } = result
 
       const now = Date.now()
-      const ear = averageEyeAspectRatio(face.landmarks)
-      livenessRef.current = nextLivenessState(livenessRef.current, ear, now)
-      const live = isLive(livenessRef.current.blinkAt, now)
-
       matchStreakRef.current = nextMatchStreak(matchStreakRef.current, isMatch ? bestMatch!.candidate.id : null, now)
       const isConfirmed = isMatch && streakHeldMs(matchStreakRef.current, now) >= CONFIRM_HOLD_MS
 
-      setWaitingForBlink(isMatch && !live)
-
-      if (isConfirmed && live) {
+      if (isConfirmed) {
         const member = bestMatch!.candidate
         const lastTime = lastCheckinRef.current[member.id] ?? 0
         const alreadyToday = hasCheckedInToday(checkins, member.id)
@@ -157,14 +136,8 @@ export default function FaceScanner() {
       const matchedName = bestMatch?.candidate.name
       return {
         box: face.box,
-        color: isMatch ? (live && isConfirmed ? '#10b981' : '#3b82f6') : '#f59e0b',
-        label: isMatch
-          ? live
-            ? isConfirmed
-              ? matchedName!
-              : `${matchedName} · กำลังยืนยัน`
-            : `${matchedName} · กระพริบตา`
-          : 'ไม่พบในระบบ',
+        color: isMatch ? (isConfirmed ? '#10b981' : '#3b82f6') : '#f59e0b',
+        label: isMatch ? (isConfirmed ? matchedName! : `${matchedName} · กำลังยืนยัน`) : 'ไม่พบในระบบ',
       }
     },
   })
@@ -233,12 +206,12 @@ export default function FaceScanner() {
                 <Select value={camera.activeDeviceId} onValueChange={(id) => camera.start(id)}>
                   <SelectTrigger className="h-8 w-[168px] text-xs">
                     <SwitchCamera className="me-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <SelectValue placeholder="เลือกกล้อง" />
+                    <SelectValue placeholder="เลือกกล้อง" className="min-w-0" />
                   </SelectTrigger>
                   <SelectContent>
                     {camera.devices.map((d, i) => (
                       <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
-                        {d.label || `กล้อง ${i + 1}`}
+                        {d.label ? cleanDeviceLabel(d.label) : `กล้อง ${i + 1}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -309,12 +282,6 @@ export default function FaceScanner() {
                       &quot;เช็คอินแบบ Manual&quot; ด้านขวาแทนได้เลย
                     </p>
                   )}
-                </div>
-              )}
-
-              {waitingForBlink && !feedback && camera.cameraState === 'ready' && (
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-blue-600/90 px-4 py-2 text-center text-sm font-medium text-white backdrop-blur-sm">
-                  <Eye className="h-4 w-4 shrink-0" /> กระพริบตาเพื่อยืนยันว่าเป็นคนจริง ก่อนเช็คอิน
                 </div>
               )}
 
@@ -391,7 +358,6 @@ export default function FaceScanner() {
               <ul className="mt-1.5 list-inside list-disc space-y-0.5">
                 <li>ให้แสงส่องหน้าอย่างเพียงพอ หลีกเลี่ยงแสงย้อน</li>
                 <li>มองตรงเข้ากล้องและอยู่ห่างประมาณ 40-60 ซม.</li>
-                <li>เมื่อระบบพบใบหน้าที่ตรงกัน จะขอให้กระพริบตา 1 ครั้งเพื่อยืนยันว่าเป็นคนจริง (ป้องกันรูปถ่าย/วิดีโอปลอม)</li>
                 <li>สมาชิกต้องลงทะเบียนใบหน้าในหน้า &quot;จัดการบุคลากร&quot; ก่อน</li>
                 <li>
                   ถ้าภาพจากกล้องยังคงมืดสนิท ลองเลือกกล้องอื่นจากเมนู &quot;เลือกกล้อง&quot; ด้านบนวิดีโอ

@@ -13,14 +13,12 @@ import {
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCameraStream } from '@/hooks/useCameraStream'
+import { cleanDeviceLabel } from '@/lib/cameraHelpers'
 import {
   detectFaceWithDescriptor,
   detectFaceLandmarksOnly,
   captureCleanMirroredFrame,
-  averageEyeAspectRatio,
-  nextLivenessState,
-  isLive,
-  type LivenessState,
+  averageDescriptors,
 } from '@/lib/faceEngine'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +31,14 @@ interface FaceCaptureDialogProps {
 
 const MODEL_LOAD_ERROR_MESSAGE =
   'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ (อาจเกิดจากข้อจำกัดเครือข่ายในหน้าตัวอย่างนี้) กรุณารันโปรเจกต์นี้ภายนอกเพื่อใช้งานกล้องจริง หรือใช้การเช็คอินแบบ Manual แทน'
+
+// Registration averages several descriptors taken a beat apart (natural
+// micro-variance in angle/expression as the person holds still) into one
+// centroid via averageDescriptors() — noticeably more robust to the
+// lighting/angle the person will actually show up in at check-in time than
+// a single frozen frame, at zero extra cost on the match side.
+const ENROLLMENT_SHOT_COUNT = 4
+const ENROLLMENT_SHOT_INTERVAL_MS = 350
 
 // Crops the uploaded photo down to the detected face box (plus a margin so
 // the crop doesn't hug the jawline/hairline too tightly), matching the
@@ -72,27 +78,28 @@ export default function FaceCaptureDialog({
   const [captureErrorMsg, setCaptureErrorMsg] = useState('')
   const [captured, setCaptured] = useState<{ descriptor: number[]; photo: string } | null>(null)
   const [faceDetected, setFaceDetected] = useState(false)
-  // Liveness (blink) gate for the live-capture path only — the gallery
-  // upload path is a still image and can never satisfy it. Optional: a
-  // "skip" button lets the flow proceed without a blink if the camera/
-  // lighting makes one hard to catch, rather than blocking registration.
-  const livenessRef = useRef<LivenessState>({ eyesClosed: false, blinkAt: null })
-  const [blinkOk, setBlinkOk] = useState(false)
-  const [skipLiveness, setSkipLiveness] = useState(false)
-  // Guards the auto-capture-on-blink trigger below so it only fires once per
-  // scan session — without it, every tick after the blink stays "live" for
-  // LIVENESS_VALID_MS and would kick off another capture race.
-  const autoCapturedRef = useRef(false)
+  const [shotsCollected, setShotsCollected] = useState(0)
+  // Guards the auto-capture-on-detect trigger below so it only fires once
+  // per scan session — without it, every tick after the first detection
+  // would kick off another enrollment-sequence race. A ref (not state)
+  // because the tick loop's closure only refreshes when camera.cameraState
+  // changes, so a state value read there would stay stale.
+  const enrollmentRunningRef = useRef(false)
+  // Flips false when the dialog closes/unmounts so an in-flight multi-shot
+  // sequence stops writing state after the fact.
+  const activeRef = useRef(true)
 
   useEffect(() => {
     if (!open) return
+    activeRef.current = true
     setCaptured(null)
     setCaptureErrorMsg('')
-    livenessRef.current = { eyesClosed: false, blinkAt: null }
-    setBlinkOk(false)
-    setSkipLiveness(false)
-    autoCapturedRef.current = false
+    setShotsCollected(0)
+    enrollmentRunningRef.current = false
     camera.start()
+    return () => {
+      activeRef.current = false
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -110,19 +117,9 @@ export default function FaceCaptureDialog({
           const result = await detectFaceLandmarksOnly(video)
           if (cancelled) return
           setFaceDetected(!!result)
-          if (result) {
-            const now = Date.now()
-            const ear = averageEyeAspectRatio(result.landmarks)
-            livenessRef.current = nextLivenessState(livenessRef.current, ear, now)
-            const live = isLive(livenessRef.current.blinkAt, now)
-            setBlinkOk(live)
-            if (live && !autoCapturedRef.current) {
-              autoCapturedRef.current = true
-              void captureFromVideo(video)
-            }
-          } else {
-            livenessRef.current = { eyesClosed: false, blinkAt: null }
-            setBlinkOk(false)
+          if (result && !enrollmentRunningRef.current) {
+            enrollmentRunningRef.current = true
+            void runEnrollmentCapture(video)
           }
           camera.paint(result ? { box: result.box, color: '#14b8a6' } : null)
         } catch {
@@ -140,32 +137,63 @@ export default function FaceCaptureDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera.cameraState])
 
-  // Shared by the auto-capture-on-blink trigger (tick loop above) and the
-  // manual "ถ่ายภาพ" button (still needed as a fallback when the user taps
-  // "ข้ามการตรวจสอบกระพริบตา").
-  async function captureFromVideo(video: HTMLVideoElement) {
+  function finishCapture(descriptor: number[], photo: string) {
+    setCaptureErrorMsg('')
+    setCaptured({ descriptor, photo })
+    if (detectRafRef.current) cancelAnimationFrame(detectRafRef.current)
+    camera.stop()
+  }
+
+  // Auto-capture-on-detect trigger (tick loop above): takes ENROLLMENT_SHOT_COUNT
+  // descriptors a beat apart and averages them into one steadier reference
+  // (see the comment on ENROLLMENT_SHOT_COUNT above). Bails and lets the tick
+  // loop retry from scratch if the face is lost mid-sequence, rather than
+  // silently registering off fewer shots.
+  async function runEnrollmentCapture(video: HTMLVideoElement) {
+    const descriptors: number[][] = []
+    for (let i = 0; i < ENROLLMENT_SHOT_COUNT; i++) {
+      if (i > 0) await new Promise((resolve) => setTimeout(resolve, ENROLLMENT_SHOT_INTERVAL_MS))
+      if (!activeRef.current) return
+      const result = await detectFaceWithDescriptor(video)
+      if (!activeRef.current) return
+      if (!result) {
+        setShotsCollected(0)
+        enrollmentRunningRef.current = false
+        return
+      }
+      descriptors.push(Array.from(result.descriptor))
+      setShotsCollected(i + 1)
+    }
+
+    const snapCanvas = captureCleanMirroredFrame(video)
+    const photo = snapCanvas?.toDataURL('image/jpeg', 0.85)
+    if (!photo) {
+      setCaptureErrorMsg('ถ่ายภาพไม่สำเร็จ กรุณาลองใหม่')
+      setShotsCollected(0)
+      enrollmentRunningRef.current = false
+      return
+    }
+    finishCapture(averageDescriptors(descriptors), photo)
+  }
+
+  // Manual fallback for when the auto sequence above keeps losing the face
+  // mid-capture (e.g. can't hold still long enough) — a single shot beats
+  // being stuck.
+  async function handleCapture() {
+    const video = camera.videoRef.current
+    if (!video) return
     const result = await detectFaceWithDescriptor(video)
     if (!result) {
       setCaptureErrorMsg('ไม่พบใบหน้าในเฟรมนี้ กรุณาจัดใบหน้าให้อยู่ตรงกลางกล้องแล้วลองใหม่')
       return
     }
-    setCaptureErrorMsg('')
     const snapCanvas = captureCleanMirroredFrame(video)
     const photo = snapCanvas?.toDataURL('image/jpeg', 0.85)
     if (!photo) {
       setCaptureErrorMsg('ถ่ายภาพไม่สำเร็จ กรุณาลองใหม่')
       return
     }
-    setCaptured({ descriptor: Array.from(result.descriptor), photo })
-    if (detectRafRef.current) cancelAnimationFrame(detectRafRef.current)
-    camera.stop()
-  }
-
-  async function handleCapture() {
-    const video = camera.videoRef.current
-    if (!video) return
-    if (!skipLiveness && !blinkOk) return
-    await captureFromVideo(video)
+    finishCapture(Array.from(result.descriptor), photo)
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -192,11 +220,7 @@ export default function FaceCaptureDialog({
       setCaptureErrorMsg('ไม่พบใบหน้าในรูปภาพนี้ กรุณาเลือกรูปภาพอื่นที่เห็นใบหน้าชัดเจน')
       return
     }
-    setCaptureErrorMsg('')
-    const photo = cropFaceToDataUrl(img, result.box)
-    setCaptured({ descriptor: Array.from(result.descriptor), photo })
-    if (detectRafRef.current) cancelAnimationFrame(detectRafRef.current)
-    camera.stop()
+    finishCapture(Array.from(result.descriptor), cropFaceToDataUrl(img, result.box))
   }
 
   function handleConfirm() {
@@ -207,10 +231,8 @@ export default function FaceCaptureDialog({
 
   function handleRetake() {
     setCaptured(null)
-    livenessRef.current = { eyesClosed: false, blinkAt: null }
-    setBlinkOk(false)
-    setSkipLiveness(false)
-    autoCapturedRef.current = false
+    setShotsCollected(0)
+    enrollmentRunningRef.current = false
     camera.start(camera.activeDeviceId)
   }
 
@@ -232,12 +254,12 @@ export default function FaceCaptureDialog({
           <Select value={camera.activeDeviceId} onValueChange={(id) => camera.start(id)}>
             <SelectTrigger className="h-8 text-xs">
               <SwitchCamera className="me-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <SelectValue placeholder="เลือกกล้อง" />
+              <SelectValue placeholder="เลือกกล้อง" className="min-w-0" />
             </SelectTrigger>
             <SelectContent>
               {camera.devices.map((d, i) => (
                 <SelectItem key={d.deviceId} value={d.deviceId} className="text-xs">
-                  {d.label || `กล้อง ${i + 1}`}
+                  {d.label ? cleanDeviceLabel(d.label) : `กล้อง ${i + 1}`}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -288,11 +310,9 @@ export default function FaceCaptureDialog({
                 >
                   {!faceDetected
                     ? 'กำลังค้นหาใบหน้า...'
-                    : skipLiveness
-                      ? 'ตรวจพบใบหน้า พร้อมถ่ายภาพ'
-                      : blinkOk
-                        ? 'กำลังถ่ายภาพ...'
-                        : 'ตรวจพบใบหน้า กระพริบตาเพื่อถ่ายภาพอัตโนมัติ'}
+                    : shotsCollected > 0
+                      ? `กำลังถ่ายภาพ ${shotsCollected}/${ENROLLMENT_SHOT_COUNT}`
+                      : 'ตรวจพบใบหน้า กำลังเตรียมถ่ายภาพ...'}
                 </div>
               )}
               {captured && (
@@ -325,7 +345,7 @@ export default function FaceCaptureDialog({
         {scanning && !showFrameWarning && (
           <>
             <p className="text-center text-sm font-medium text-foreground">
-              {faceDetected && !skipLiveness && !blinkOk ? 'กระพริบตา 1 ครั้งเพื่อยืนยันตัวตน' : 'มองตรงเข้ากล้อง'}
+              {shotsCollected > 0 ? 'อยู่นิ่ง ๆ จนกว่าจะถ่ายครบ' : 'มองตรงเข้ากล้อง'}
             </p>
             <p className="text-center text-xs text-muted-foreground">
               ถ้าภาพเป็นสีดำสนิท ลองเลือกกล้องอื่นจากเมนูด้านบน (บางเครื่องมีกล้อง IR สำหรับ Windows Hello ด้วย)
@@ -350,16 +370,7 @@ export default function FaceCaptureDialog({
               <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-1.5">
                 <ImagePlus className="h-4 w-4" /> เพิ่มรูปภาพ
               </Button>
-              {faceDetected && !skipLiveness && !blinkOk && (
-                <Button variant="ghost" onClick={() => setSkipLiveness(true)} className="text-xs text-muted-foreground">
-                  ข้ามการตรวจสอบกระพริบตา
-                </Button>
-              )}
-              <Button
-                onClick={handleCapture}
-                disabled={!faceDetected || (!skipLiveness && !blinkOk)}
-                className="gap-1.5"
-              >
+              <Button onClick={handleCapture} disabled={!faceDetected || shotsCollected > 0} className="gap-1.5">
                 <ScanFace className="h-4 w-4" /> ถ่ายภาพและบันทึก
               </Button>
             </>

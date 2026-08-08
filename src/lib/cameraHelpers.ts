@@ -33,6 +33,16 @@ export function describeGetUserMediaError(err: unknown): string {
   }
 }
 
+// Chrome/Edge append the raw USB vendor:product hex ID to camera labels
+// once permission has been granted before, e.g. "Integrated Camera
+// (5986:2130)" — meaningless to a non-technical kiosk user and, in the
+// narrow device-picker dropdowns this app uses, often the exact part that
+// gets clipped off mid-string. Strips it for display; falls back to the
+// untouched label if it isn't actually there.
+export function cleanDeviceLabel(label: string): string {
+  return label.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, '').trim()
+}
+
 /**
  * Average luminance (0-255) of a canvas, sampled on a small downscaled
  * copy for speed. Used to tell "the video pipeline is broken and painting
