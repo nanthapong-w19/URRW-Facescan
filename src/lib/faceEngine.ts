@@ -113,6 +113,32 @@ export function averageEyeAspectRatio(landmarks: faceapi.FaceLandmarks68): numbe
 // land around 0.25-0.35, a genuine blink dips well under 0.2.
 export const EAR_BLINK_THRESHOLD = 0.2
 
+// How long a detected blink keeps a tracked face "live" for. Wide enough to
+// bridge a couple of scan ticks around the blink itself, short enough that
+// holding up a static photo can't coast on a single lucky detection. Shared
+// by FaceScanner.tsx's per-tick check-in gate and FaceCaptureDialog.tsx's
+// registration capture gate.
+export const LIVENESS_VALID_MS = 4000
+
+export interface LivenessState {
+  eyesClosed: boolean
+  blinkAt: number | null
+}
+
+// Tracks eye-aspect-ratio across ticks and requires one real blink (closed
+// -> open transition) before a match counts as "live" — a static photo or
+// frozen video frame held up to the camera can never produce that
+// transition. Pure function so it's testable without a DOM/video element.
+export function nextLivenessState(state: LivenessState, ear: number, now: number): LivenessState {
+  if (ear < EAR_BLINK_THRESHOLD) return { ...state, eyesClosed: true }
+  if (state.eyesClosed) return { eyesClosed: false, blinkAt: now }
+  return state
+}
+
+export function isLive(blinkAt: number | null, now: number): boolean {
+  return blinkAt !== null && now - blinkAt < LIVENESS_VALID_MS
+}
+
 /** Euclidean distance between two face descriptors. Lower = more similar. */
 export function descriptorDistance(a: number[] | Float32Array, b: number[] | Float32Array): number {
   let sum = 0

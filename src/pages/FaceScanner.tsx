@@ -30,11 +30,13 @@ import { recordCheckin, hasCheckedInToday } from '@/lib/store'
 import {
   distanceToConfidence,
   averageEyeAspectRatio,
-  EAR_BLINK_THRESHOLD,
   CONFIRM_HOLD_MS,
   nextMatchStreak,
   streakHeldMs,
+  nextLivenessState,
+  isLive,
   type MatchStreak,
+  type LivenessState,
 } from '@/lib/faceEngine'
 import { useFaceCamera } from '@/hooks/useFaceCamera'
 import type { Member } from '@/lib/types'
@@ -68,40 +70,16 @@ function playSuccessChime() {
 }
 
 const REPEAT_COOLDOWN_MS = 15000
-// How long a detected blink keeps the tracked face "live" for. Wide enough
-// to bridge a couple of scan ticks around the blink itself, short enough
-// that holding up a static photo can't coast on a single lucky detection.
-const LIVENESS_VALID_MS = 4000
 
 const MODEL_LOAD_ERROR_MESSAGE =
   'ไม่สามารถโหลดโมเดลตรวจจับใบหน้าได้ อาจเกิดจากข้อจำกัดเครือข่ายของหน้าตัวอย่างนี้ กรุณารันโปรเจกต์นี้ในเครื่องของคุณเพื่อใช้กล้องจริง หรือใช้ "เช็คอินแบบ Manual" ด้านล่างแทนได้ทันที'
-
-export interface LivenessState {
-  eyesClosed: boolean
-  blinkAt: number | null
-}
-
-// Tick policy (see CONTEXT.md "Tick policy"), split out as a pure function
-// so it's testable without a DOM/video element: tracks eye-aspect-ratio
-// across ticks and requires one real blink (closed -> open transition)
-// before a match counts as "live" — a static photo or frozen video frame
-// held up to the camera can never produce that transition.
-export function nextLivenessState(state: LivenessState, ear: number, now: number): LivenessState {
-  if (ear < EAR_BLINK_THRESHOLD) return { ...state, eyesClosed: true }
-  if (state.eyesClosed) return { eyesClosed: false, blinkAt: now }
-  return state
-}
-
-export function isLive(blinkAt: number | null, now: number): boolean {
-  return blinkAt !== null && now - blinkAt < LIVENESS_VALID_MS
-}
 
 export default function FaceScanner() {
   const { members, checkins } = useAppData()
   const registeredMembers = useMemo(() => members.filter((m) => m.faceStatus === 'registered'), [members])
 
   const lastCheckinRef = useRef<Record<string, number>>({})
-  const livenessRef = useRef<{ eyesClosed: boolean; blinkAt: number | null }>({
+  const livenessRef = useRef<LivenessState>({
     eyesClosed: false,
     blinkAt: null,
   })

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nextLivenessState, isLive, type LivenessState } from './FaceScanner'
-import { EAR_BLINK_THRESHOLD } from '@/lib/faceEngine'
+import { nextLivenessState, isLive, EAR_BLINK_THRESHOLD, type LivenessState } from '@/lib/faceEngine'
 
 const OPEN_EAR = EAR_BLINK_THRESHOLD + 0.1
 const CLOSED_EAR = EAR_BLINK_THRESHOLD - 0.05
