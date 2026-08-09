@@ -175,28 +175,44 @@ export default function Login() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div ref={shakeFieldRef} className="space-y-1">
-              <Input
-                id="manual-id"
-                aria-label="เข้าสู่ระบบด้วยรหัสผู้ดูแล"
-                aria-invalid={manualError ? true : undefined}
-                aria-describedby={manualError ? 'manual-id-error' : previewGranted ? 'manual-id-match' : undefined}
-                value={manualId}
-                onChange={(e) => {
-                  setManualId(e.target.value)
-                  setManualError('')
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && handleManualLogin()}
-                placeholder="กรอกรหัสบุคลากร"
-                autoComplete="off"
-                autoCapitalize="characters"
-                autoCorrect="off"
-                spellCheck={false}
-                disabled={!!matchedName}
-                // 16px min font size — anything smaller makes iOS Safari
-                // zoom the whole page in on focus, which is jarring on a
-                // screen that's meant to work smoothly on any device.
-                className="text-center text-base"
-              />
+              {/* Floating label — the label sits centered inside the field
+                  like a placeholder at rest, then floats up onto the border
+                  (bg-card behind it masks the border line, Material-outline
+                  style) once the field is focused or has a value. Driven
+                  purely by the `:placeholder-shown` + `:focus` CSS pseudo
+                  states via Tailwind's peer-* variants, no extra state. The
+                  input needs a real (space) placeholder for
+                  `:placeholder-shown` to key off. */}
+              <div className="relative">
+                <Input
+                  id="manual-id"
+                  aria-label="เข้าสู่ระบบด้วยรหัสผู้ดูแล"
+                  aria-invalid={manualError ? true : undefined}
+                  aria-describedby={manualError ? 'manual-id-error' : previewGranted ? 'manual-id-match' : undefined}
+                  value={manualId}
+                  onChange={(e) => {
+                    setManualId(e.target.value)
+                    setManualError('')
+                  }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleManualLogin()}
+                  placeholder=" "
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  disabled={!!matchedName}
+                  // 16px min font size — anything smaller makes iOS Safari
+                  // zoom the whole page in on focus, which is jarring on a
+                  // screen that's meant to work smoothly on any device.
+                  className="peer h-12 rounded-xl text-center text-base"
+                />
+                <label
+                  htmlFor="manual-id"
+                  className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded bg-card px-1.5 text-sm text-muted-foreground transition-all duration-150 peer-focus:top-0 peer-focus:text-[11px] peer-focus:font-medium peer-focus:text-primary peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:text-[11px] peer-[:not(:placeholder-shown)]:font-medium"
+                >
+                  กรอกรหัสบุคลากร
+                </label>
+              </div>
             </div>
             {manualError && (
               <p id="manual-id-error" role="alert" className="text-xs text-destructive">

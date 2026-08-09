@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Calendar } from '@/components/ui/calendar'
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -19,18 +19,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, CalendarPlus, CalendarDays, Clock, CheckCircle2 } from 'lucide-react'
+import { Users, CalendarPlus, CalendarDays, Clock, CheckCircle2, ChevronUp, ChevronDown } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { createMeeting } from '@/lib/store'
 import { MEETING_ROOMS } from '@/lib/constants'
-import { parseThaiDateInput, formatThaiDateInput } from '@/lib/thaiCalendar'
-import { parseTimeInput, autoFormatSegmented } from '@/lib/dateTimeInput'
+import { formatThaiDateInput } from '@/lib/thaiCalendar'
 import { cn } from '@/lib/utils'
 
-// 24-hour "HH:mm" — the everyday Thai convention (no am/pm split).
-const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
-const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+// One column of the time panel — an hour or minute value with tap-to-spin
+// chevrons either side, wrapping at `max` (23 for hours, 59 for minutes)
+// instead of clamping, so holding the button cycles round the clock.
+function TimeSpinner({ value, onChange, max }: { value: number; onChange: (next: number) => void; max: number }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-9 text-muted-foreground"
+        onClick={() => onChange((value + 1) % (max + 1))}
+      >
+        <ChevronUp className="h-4 w-4" />
+      </Button>
+      <div className="flex h-9 w-9 items-center justify-center rounded-md border border-input bg-secondary/50 text-sm font-semibold tabular-nums text-foreground">
+        {String(value).padStart(2, '0')}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-9 text-muted-foreground"
+        onClick={() => onChange((value - 1 + (max + 1)) % (max + 1))}
+      >
+        <ChevronDown className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+}
 
 // Hidden system account — never shown, searchable, or selectable as a
 // meeting participant (not a real invitee, so it shouldn't appear in the
@@ -45,11 +71,8 @@ export default function CreateMeeting() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [meetingDate, setMeetingDate] = useState<Date | undefined>(undefined)
-  const [dateInputText, setDateInputText] = useState('')
-  const [datePickerOpen, setDatePickerOpen] = useState(false)
   const [meetingTimeOfDay, setMeetingTimeOfDay] = useState('')
-  const [timeInputText, setTimeInputText] = useState('')
-  const [timePickerOpen, setTimePickerOpen] = useState(false)
+  const [dateTimePickerOpen, setDateTimePickerOpen] = useState(false)
   const [location, setLocation] = useState('')
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -154,176 +177,106 @@ export default function CreateMeeting() {
             <Input id="meeting-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น ประชุมกลุ่มสาระฯ ประจำเดือน" />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="meeting-date">วันที่ประชุม</Label>
-              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-                <PopoverAnchor asChild>
-                  <div className="relative">
-                    <Input
-                      id="meeting-date"
-                      value={dateInputText}
-                      onChange={(e) => {
-                        const formatted = autoFormatSegmented(e.target.value, dateInputText, [2, 2, 4], '/')
-                        setDateInputText(formatted)
-                        if (!formatted.trim()) {
-                          setMeetingDate(undefined)
-                          return
-                        }
-                        const parsed = parseThaiDateInput(formatted)
-                        if (parsed) setMeetingDate(parsed)
-                      }}
-                      onBlur={() => {
-                        if (!dateInputText.trim()) {
-                          setMeetingDate(undefined)
-                          return
-                        }
-                        const parsed = parseThaiDateInput(dateInputText)
-                        if (parsed) {
-                          setMeetingDate(parsed)
-                          setDateInputText(formatThaiDateInput(parsed))
-                        } else {
-                          setDateInputText(meetingDate ? formatThaiDateInput(meetingDate) : '')
-                        }
-                      }}
-                      placeholder="วว/ดด/ปปปป (พ.ศ.)"
-                      inputMode="numeric"
-                      maxLength={10}
-                      className="pe-9"
-                    />
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute end-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground"
-                      >
-                        <CalendarDays className="h-4 w-4" />
-                      </Button>
-                    </PopoverTrigger>
-                  </div>
-                </PopoverAnchor>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    locale={th}
-                    selected={meetingDate}
-                    onSelect={(date) => {
-                      setMeetingDate(date)
-                      setDateInputText(date ? formatThaiDateInput(date) : '')
-                      setDatePickerOpen(false)
-                    }}
-                    formatters={{
-                      formatCaption: (date) =>
-                        new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' }).format(
-                          date
-                        ),
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="meeting-time-of-day">เวลาที่เริ่มประชุม</Label>
-              <Popover open={timePickerOpen} onOpenChange={setTimePickerOpen}>
-                <PopoverAnchor asChild>
-                  <div className="relative">
-                    <Input
-                      id="meeting-time-of-day"
-                      value={timeInputText}
-                      onChange={(e) => {
-                        const formatted = autoFormatSegmented(e.target.value, timeInputText, [2, 2], ':')
-                        setTimeInputText(formatted)
-                        if (!formatted.trim()) {
-                          setMeetingTimeOfDay('')
-                          return
-                        }
-                        const parsed = parseTimeInput(formatted)
-                        if (parsed) setMeetingTimeOfDay(parsed)
-                      }}
-                      onBlur={() => {
-                        if (!timeInputText.trim()) {
-                          setMeetingTimeOfDay('')
-                          return
-                        }
-                        const parsed = parseTimeInput(timeInputText)
-                        if (parsed) {
-                          setMeetingTimeOfDay(parsed)
-                          setTimeInputText(parsed)
-                        } else {
-                          setTimeInputText(meetingTimeOfDay)
-                        }
-                      }}
-                      placeholder="ตัวอย่าง (16:00)"
-                      inputMode="numeric"
-                      maxLength={5}
-                      className="pe-9"
-                    />
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute end-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground"
-                      >
-                        <Clock className="h-4 w-4" />
-                      </Button>
-                    </PopoverTrigger>
-                  </div>
-                </PopoverAnchor>
-                <PopoverContent className="w-auto p-3" align="start">
-                  <div className="flex items-center gap-2">
-                    <Select
-                      value={meetingTimeOfDay ? meetingTimeOfDay.split(':')[0] : undefined}
-                      onValueChange={(hour) => {
-                        const minute = meetingTimeOfDay ? meetingTimeOfDay.split(':')[1] : '00'
-                        const next = `${hour}:${minute}`
-                        setMeetingTimeOfDay(next)
-                        setTimeInputText(next)
-                      }}
-                    >
-                      <SelectTrigger className="w-20">
-                        <SelectValue placeholder="ชม." />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        {HOURS.map((h) => (
-                          <SelectItem key={h} value={h}>
-                            {h}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-muted-foreground">:</span>
-                    <Select
-                      value={meetingTimeOfDay ? meetingTimeOfDay.split(':')[1] : undefined}
-                      onValueChange={(minute) => {
-                        const hour = meetingTimeOfDay ? meetingTimeOfDay.split(':')[0] : '00'
-                        const next = `${hour}:${minute}`
-                        setMeetingTimeOfDay(next)
-                        setTimeInputText(next)
-                      }}
-                    >
-                      <SelectTrigger className="w-20">
-                        <SelectValue placeholder="นาที" />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        {MINUTES.map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {m}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-sm text-muted-foreground">น.</span>
-                  </div>
-                  <Button
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="meeting-datetime">วันที่ & เวลาประชุม</Label>
+              <Popover open={dateTimePickerOpen} onOpenChange={setDateTimePickerOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    id="meeting-datetime"
                     type="button"
-                    size="sm"
-                    className="mt-3 w-full"
-                    disabled={!meetingTimeOfDay}
-                    onClick={() => setTimePickerOpen(false)}
+                    className="flex h-10 w-full items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm shadow-sm transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
-                    ตกลง
-                  </Button>
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-foreground">
+                      <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
+                      {meetingDate ? (
+                        formatThaiDateInput(meetingDate)
+                      ) : (
+                        <span className="text-muted-foreground">วว/ดด/ปปปป</span>
+                      )}
+                    </span>
+                    <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-foreground">
+                      <Clock className="h-4 w-4 shrink-0 text-primary" />
+                      {meetingTimeOfDay ? `${meetingTimeOfDay} น.` : <span className="text-muted-foreground">--:--</span>}
+                    </span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start" side="bottom" avoidCollisions={false}>
+                  <div className="flex items-center justify-between border-b border-border/70 px-3 py-2">
+                    <span className="text-xs font-medium text-muted-foreground">เลือกวันที่และเวลา</span>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setMeetingDate(new Date())}
+                      >
+                        วันนี้
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => {
+                          const now = new Date()
+                          setMeetingDate(now)
+                          setMeetingTimeOfDay(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
+                        }}
+                      >
+                        ตอนนี้
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row">
+                    <Calendar
+                      mode="single"
+                      locale={th}
+                      selected={meetingDate}
+                      onSelect={(date) => setMeetingDate(date)}
+                      className="p-2 [--cell-size:1.75rem]"
+                      formatters={{
+                        formatCaption: (date) =>
+                          new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' }).format(
+                            date
+                          ),
+                      }}
+                    />
+                    <div className="flex flex-col items-center gap-2 border-t border-border/70 p-3 sm:border-l sm:border-t-0">
+                      <span className="text-xs font-medium text-muted-foreground">เวลา</span>
+                      <div className="flex items-center gap-1.5">
+                        <TimeSpinner
+                          max={23}
+                          value={meetingTimeOfDay ? Number(meetingTimeOfDay.split(':')[0]) : 0}
+                          onChange={(hour) => {
+                            const minute = meetingTimeOfDay ? meetingTimeOfDay.split(':')[1] : '00'
+                            setMeetingTimeOfDay(`${String(hour).padStart(2, '0')}:${minute}`)
+                          }}
+                        />
+                        <span className="text-lg font-semibold text-muted-foreground">:</span>
+                        <TimeSpinner
+                          max={59}
+                          value={meetingTimeOfDay ? Number(meetingTimeOfDay.split(':')[1]) : 0}
+                          onChange={(minute) => {
+                            const hour = meetingTimeOfDay ? meetingTimeOfDay.split(':')[0] : '00'
+                            setMeetingTimeOfDay(`${hour}:${String(minute).padStart(2, '0')}`)
+                          }}
+                        />
+                        <span className="text-sm text-muted-foreground">น.</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border-t border-border/70 p-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setDateTimePickerOpen(false)}
+                    >
+                      ตกลง
+                    </Button>
+                  </div>
                 </PopoverContent>
               </Popover>
             </div>
@@ -333,7 +286,7 @@ export default function CreateMeeting() {
                 <SelectTrigger id="meeting-location">
                   <SelectValue placeholder="เลือกห้องประชุม" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent side="bottom" avoidCollisions={false}>
                   {MEETING_ROOMS.map((room) => (
                     <SelectItem key={room} value={room}>
                       {room}
