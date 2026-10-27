@@ -180,7 +180,7 @@ export default function TeacherVote() {
           paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
         }}
       >
-        <h1 className="sr-only">โหวต ครูดีศรี อ.ร.ว.นม. รางวัลครูผู้เป็นที่รักของเพื่อนร่วมงาน (Popular Teacher Award)</h1>
+        <h1 className="sr-only">โหวต ครูดีศรี อ.ร.ว.นม. รางวัล ครูผู้เป็นที่รักของเพื่อนร่วมงาน (Popular Teacher Award)</h1>
 
         <Card className="animate-login-card-in flex max-h-full min-h-0 w-full flex-col border-accent/25 bg-card/[0.97] shadow-2xl backdrop-blur-sm">
           <CardHeader className="shrink-0 items-center space-y-1 p-4 pb-2 text-center">
@@ -191,7 +191,9 @@ export default function TeacherVote() {
               </CardTitle>
             </div>
             <div className="flex flex-col items-center leading-tight" aria-hidden>
-              <p className="font-display text-sm font-semibold text-foreground">รางวัลครูผู้เป็นที่รักของเพื่อนร่วมงาน</p>
+              <p className="font-display text-sm font-semibold text-foreground">
+                <span className="text-base font-bold text-primary">รางวัล</span> ครูผู้เป็นที่รักของเพื่อนร่วมงาน
+              </p>
               <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Popular Teacher Award</p>
             </div>
             {votedName === null && (

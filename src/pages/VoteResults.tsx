@@ -245,7 +245,7 @@ export default function VoteResults() {
                 <Heart className="h-7 w-7 shrink-0 fill-accent text-accent" /> โหวต ครูดีศรี อ.ร.ว.นม.
               </h1>
               <p className="font-display text-base font-semibold text-white/90 sm:text-lg">
-                รางวัลครูผู้เป็นที่รักของเพื่อนร่วมงาน
+                <span className="text-lg font-bold text-accent sm:text-xl">รางวัล</span> ครูผู้เป็นที่รักของเพื่อนร่วมงาน
                 <span className="ml-2 inline-block text-xs font-semibold uppercase tracking-[0.2em] text-accent sm:text-sm">
                   Popular Teacher Award
                 </span>
