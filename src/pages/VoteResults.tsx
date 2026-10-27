@@ -183,7 +183,7 @@ export default function VoteResults() {
   const qrStyle = { width: qrEdge, height: qrEdge }
 
   const qrImage = qrDataUrl ? (
-    <img src={qrDataUrl} alt="QR code ลิงก์หน้าโหวตครูในดวงใจ" style={qrStyle} className="transition-[width,height] duration-200" />
+    <img src={qrDataUrl} alt="QR code ลิงก์หน้าโหวต ครูดีศรี อ.ร.ว.นม." style={qrStyle} className="transition-[width,height] duration-200" />
   ) : (
     <div style={qrStyle} className="animate-pulse rounded-lg bg-muted" />
   )
@@ -238,9 +238,20 @@ export default function VoteResults() {
 
       <div className="animate-page-in relative z-10 space-y-6">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <h1 className="font-display flex items-center gap-2 text-2xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)] sm:text-3xl">
-            <Heart className="h-7 w-7 fill-accent text-accent" /> โหวตครูในดวงใจ
-          </h1>
+          <div className="flex items-center gap-3 drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
+            <img src="/logo.png" alt="ตราสัญลักษณ์โรงเรียน" className="h-14 w-14 shrink-0 object-contain sm:h-16 sm:w-16" />
+            <div className="space-y-1">
+              <h1 className="font-display flex items-center gap-2 text-2xl font-bold text-white sm:text-3xl">
+                <Heart className="h-7 w-7 shrink-0 fill-accent text-accent" /> โหวต ครูดีศรี อ.ร.ว.นม.
+              </h1>
+              <p className="font-display text-base font-semibold text-white/90 sm:text-lg">
+                รางวัลครูผู้เป็นที่รักของเพื่อนร่วมงาน
+                <span className="ml-2 inline-block text-xs font-semibold uppercase tracking-[0.2em] text-accent sm:text-sm">
+                  Popular Teacher Award
+                </span>
+              </p>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" size="sm" className="gap-1.5" onClick={toggleFullscreen}>
               {isFullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}

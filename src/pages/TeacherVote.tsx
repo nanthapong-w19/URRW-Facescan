@@ -180,15 +180,19 @@ export default function TeacherVote() {
           paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
         }}
       >
-        <h1 className="sr-only">โหวตครูในดวงใจ</h1>
+        <h1 className="sr-only">โหวต ครูดีศรี อ.ร.ว.นม. รางวัลครูผู้เป็นที่รักของเพื่อนร่วมงาน (Popular Teacher Award)</h1>
 
         <Card className="animate-login-card-in flex max-h-full min-h-0 w-full flex-col border-accent/25 bg-card/[0.97] shadow-2xl backdrop-blur-sm">
           <CardHeader className="shrink-0 items-center space-y-1 p-4 pb-2 text-center">
             <div className="flex items-center gap-2">
               <img src="/logo.png" alt="ตราสัญลักษณ์โรงเรียน" className="h-10 w-10 object-contain" />
               <CardTitle className="font-display flex items-center gap-1.5 text-xl font-bold text-primary">
-                <Heart className="h-5 w-5 fill-primary text-primary" /> โหวตครูในดวงใจ
+                <Heart className="h-5 w-5 fill-primary text-primary" /> โหวต ครูดีศรี อ.ร.ว.นม.
               </CardTitle>
+            </div>
+            <div className="flex flex-col items-center leading-tight" aria-hidden>
+              <p className="font-display text-sm font-semibold text-foreground">รางวัลครูผู้เป็นที่รักของเพื่อนร่วมงาน</p>
+              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Popular Teacher Award</p>
             </div>
             {votedName === null && (
               <CardDescription className="text-xs">พิมพ์ชื่อครู เลือก แล้วกดโหวต (โหวตได้ 1 ครั้ง)</CardDescription>
