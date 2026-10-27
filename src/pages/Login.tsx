@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ShieldCheck, CheckCircle2 } from 'lucide-react'
 import { useAppData } from '@/hooks/useAppData'
-import { useAdminAuth } from '@/lib/adminAuth'
-import type { Member, MemberRole } from '@/lib/types'
+import { sessionRoleFor, useAdminAuth, type SessionRole } from '@/lib/adminAuth'
+import type { Member } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // Face-scan camera removed from this page per request — the manual
@@ -22,7 +22,7 @@ export default function Login() {
   const redirectTo = (location.state as { from?: string } | null)?.from ?? '/meetings'
 
   const [matchedName, setMatchedName] = useState<string | null>(null)
-  const [matchedRole, setMatchedRole] = useState<MemberRole | null>(null)
+  const [matchedRole, setMatchedRole] = useState<SessionRole | null>(null)
   const [manualId, setManualId] = useState('')
   const [manualError, setManualError] = useState('')
   // Bumped on every failed submit, even when the message text repeats
@@ -45,7 +45,7 @@ export default function Login() {
 
   function completeLogin(member: Member) {
     setMatchedName(member.name)
-    setMatchedRole(member.role)
+    setMatchedRole(sessionRoleFor(member))
     loginAsAdmin(member)
     toast.success(`เข้าสู่ระบบสำเร็จ: ${member.name}`)
     // Round 45: the full-page success transition rendered from `matchedName`
@@ -294,12 +294,16 @@ export default function Login() {
               <span
                 className={cn(
                   'mt-0.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium',
-                  matchedRole === 'admin'
+                  matchedRole !== 'viewer'
                     ? 'border-accent/40 bg-accent/15 text-accent'
                     : 'border-sky-400/40 bg-sky-400/15 text-sky-200'
                 )}
               >
-                {matchedRole === 'admin' ? 'ผู้ดูแลระบบ · จัดการการประชุมได้เต็มรูปแบบ' : 'ผู้แสดงผล · ดูข้อมูลการประชุมได้'}
+                {matchedRole === 'superadmin'
+                  ? 'ผู้ดูแลระบบสูงสุด · จัดการได้ทุกส่วน'
+                  : matchedRole === 'admin'
+                    ? 'ผู้ดูแลระบบ · จัดการการประชุมได้เต็มรูปแบบ'
+                    : 'ผู้แสดงผล · ดูข้อมูลการประชุมได้'}
               </span>
             )}
             <p className="mt-2 text-xs text-white/60">กำลังพาไปหน้าการประชุม...</p>

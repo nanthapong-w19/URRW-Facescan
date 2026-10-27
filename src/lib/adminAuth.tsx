@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Member, MemberRole } from './types'
+import { SUPERADMIN_EMPLOYEE_ID } from './constants'
 
 // Lightweight client-side "admin session" gate for the meeting features.
 //
@@ -20,7 +21,23 @@ export interface AdminSession {
   // Which of the logged-in member's roles this session carries — 'admin'
   // gets full meeting management (create/edit/delete), 'viewer' only gets
   // read-only access to the meeting list and each meeting's liveview.
-  role: MemberRole
+  // 'superadmin' is everything 'admin' is, and is the only session the
+  // hidden SUPERADMIN_EMPLOYEE_ID account gets.
+  role: SessionRole
+}
+
+export type SessionRole = Exclude<MemberRole, 'user'> | 'superadmin'
+
+// Session roles with full management access (create/edit/delete meetings,
+// see teacher-vote results). Use this instead of `role === 'admin'` so the
+// superadmin session is let through everywhere an admin is.
+export function hasAdminAccess(role: SessionRole | undefined): boolean {
+  return role === 'admin' || role === 'superadmin'
+}
+
+export function sessionRoleFor(member: Pick<Member, 'employeeId' | 'role'>): SessionRole {
+  if (member.employeeId.toLowerCase() === SUPERADMIN_EMPLOYEE_ID) return 'superadmin'
+  return member.role === 'viewer' ? 'viewer' : 'admin'
 }
 
 const STORAGE_KEY = 'facein_admin_session'
@@ -43,7 +60,7 @@ function readStoredSession(): AdminSession | null {
         id: parsed.id,
         name: parsed.name,
         employeeId: parsed.employeeId ?? '',
-        role: parsed.role === 'viewer' ? 'viewer' : 'admin',
+        role: parsed.role === 'viewer' || parsed.role === 'superadmin' ? parsed.role : 'admin',
       }
     }
     return null
@@ -68,7 +85,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       id: member.id,
       name: member.name,
       employeeId: member.employeeId,
-      role: member.role === 'viewer' ? 'viewer' : 'admin',
+      role: sessionRoleFor(member),
     })
   }
 

@@ -11,7 +11,10 @@ import type {
   MeetingParticipantRow,
   MeetingCheckin,
   MeetingCheckinRow,
+  VoteCandidate,
+  VoteTally,
 } from './types'
+import { SUPERADMIN_EMPLOYEE_ID } from './constants'
 
 // Data layer for the app — backed by Supabase (Postgres) instead of
 // localStorage, so every kiosk device reads and writes the same shared
@@ -110,6 +113,9 @@ function describeDbError(err: unknown): string {
   // state has caught up with the first request.
   if (message.includes('facein_meeting_checkins_meeting_member_unique')) {
     return 'เช็คอินแล้ว'
+  }
+  if (message.includes('facein_teacher_votes_voter_device_unique')) {
+    return 'อุปกรณ์นี้โหวตไปแล้ว'
   }
   if (message.includes('duplicate key value') || message.includes('facein_members_employee_id_key')) {
     return 'รหัสพนักงานนี้มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น'
@@ -464,4 +470,59 @@ export function hasCheckedInToday(checkins: CheckinRecord[], memberId: string): 
 
 export function todaysCheckins(checkins: CheckinRecord[]): CheckinRecord[] {
   return checkins.filter((c) => isToday(c.time))
+}
+
+// --- Teacher vote (โหวตครูในดวงใจ) ------------------------------------------
+
+// Everyone with the plain 'user' role, i.e. the real staff roster — admin/
+// viewer/superadmin accounts are system logins, not people to vote for.
+export async function getVoteCandidates(): Promise<VoteCandidate[]> {
+  const { data, error } = await supabase
+    .from('facein_members')
+    .select('id, name, department, position')
+    .eq('role', 'user')
+    .neq('employee_id', SUPERADMIN_EMPLOYEE_ID)
+    .order('name', { ascending: true })
+  if (error) throw new Error(describeDbError(error))
+  return (data as { id: string; name: string; department: string; position: string | null }[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    department: row.department,
+    position: row.position ?? '',
+  }))
+}
+
+export async function castTeacherVote(teacherId: string, voterDevice: string): Promise<void> {
+  const { error } = await supabase.from('facein_teacher_votes').insert({ teacher_id: teacherId, voter_device: voterDevice })
+  if (error) throw new Error(describeDbError(error))
+}
+
+// Candidates with at least one vote, highest first. Counted client-side from
+// a teacher_id-only select — one short uuid per vote, so even a whole
+// school's worth of votes is a small payload, and it avoids needing a SQL
+// view/RPC just for a GROUP BY.
+export async function getTeacherVoteTally(): Promise<{ tally: VoteTally[]; totalVotes: number }> {
+  const [candidates, votes] = await Promise.all([
+    getVoteCandidates(),
+    supabase.from('facein_teacher_votes').select('teacher_id'),
+  ])
+  if (votes.error) throw new Error(describeDbError(votes.error))
+
+  const counts = new Map<string, number>()
+  for (const row of votes.data as { teacher_id: string }[]) {
+    counts.set(row.teacher_id, (counts.get(row.teacher_id) ?? 0) + 1)
+  }
+
+  const sorted = candidates
+    .filter((c) => counts.has(c.id))
+    .map((c) => ({ ...c, votes: counts.get(c.id) ?? 0 }))
+    .sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name, 'th'))
+
+  const tally: VoteTally[] = []
+  sorted.forEach((c, i) => {
+    const tiedWithPrevious = i > 0 && sorted[i - 1].votes === c.votes
+    tally.push({ ...c, rank: tiedWithPrevious ? tally[i - 1].rank : i + 1 })
+  })
+
+  return { tally, totalVotes: votes.data.length }
 }

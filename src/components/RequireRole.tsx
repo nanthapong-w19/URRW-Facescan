@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom'
-import { useAdminAuth } from '@/lib/adminAuth'
+import { hasAdminAccess, useAdminAuth } from '@/lib/adminAuth'
 
 // Shared redirect-to-login gate behind RequireAdmin/RequireAuth — see
 // lib/adminAuth.tsx for why this is a UI convenience gate, not real access
@@ -9,7 +9,7 @@ export default function RequireRole({ adminOnly, children }: { adminOnly: boolea
   const { admin } = useAdminAuth()
   const location = useLocation()
 
-  const allowed = adminOnly ? admin?.role === 'admin' : Boolean(admin)
+  const allowed = adminOnly ? hasAdminAccess(admin?.role) : Boolean(admin)
   if (!allowed) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }

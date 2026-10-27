@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress'
 import { LoadingState } from '@/components/ui/loading-state'
 import { CalendarDays, Users, Plus, CalendarClock, CheckCircle2 } from 'lucide-react'
 import { getMeetings } from '@/lib/store'
-import { useAdminAuth } from '@/lib/adminAuth'
+import { hasAdminAccess, useAdminAuth } from '@/lib/adminAuth'
 import { MeetingRoomBadge } from '@/components/MeetingRoomBadge'
 import type { Meeting } from '@/lib/types'
 
@@ -40,7 +40,7 @@ function formatMeetingTime(iso: string | null) {
 
 export default function MeetingList() {
   const { admin } = useAdminAuth()
-  const isAdmin = admin?.role === 'admin'
+  const isAdmin = hasAdminAccess(admin?.role)
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loading, setLoading] = useState(true)
 

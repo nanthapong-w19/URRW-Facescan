@@ -40,3 +40,8 @@ Clean out entries 3+ months old periodically.
 - **Status**: Completed
 - **Description**: Found the photo-with-initials-fallback avatar block hand-rolled 8x across MemberList, Dashboard, MeetingDetail (x2), MeetingSummary (x4) with 3 slightly different color variants. Extracted `src/components/ui/initials-avatar.tsx` (`variant`: solid/soft/muted, optional `children` slot for badge overlays) and wired all 8 spots.
 - **Notes**: Normalized one inconsistent detail while at it — 2 spots used `text-xs` instead of the other 6's `text-sm` for the initial letter; now all `text-sm` via the shared component.
+
+### 2026-10-27 - VOTE-001: โหวตครูในดวงใจ (teacher vote with QR + ranking)
+- **Status**: Completed (needs SQL migration run in Supabase)
+- **Description**: Public `/#/vote` page (search teacher from `role = 'user'` members, vote, success screen); admin `/#/vote/results` with QR code (qrcode lib) + live-polled ranking. Added `superadmin` session role for employee ID `superurrwnm`.
+- **Notes**: Table `facein_teacher_votes` from `supabase/migrations/20261027000000_teacher_votes.sql`. See [[decisions.md]] ADR-002.

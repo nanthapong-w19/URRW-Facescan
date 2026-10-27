@@ -1,8 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Users, CalendarDays, ShieldCheck, LogIn, LogOut } from 'lucide-react'
+import { Users, CalendarDays, Heart, ShieldCheck, LogIn, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PulseDot } from '@/components/PulseDot'
-import { useAdminAuth } from '@/lib/adminAuth'
+import { hasAdminAccess, useAdminAuth } from '@/lib/adminAuth'
 import { cn } from '@/lib/utils'
 
 // "ภาพรวม" (Dashboard, "/") and "สแกนเช็คอิน" (FaceScanner, "/scan") were
@@ -14,9 +14,13 @@ const links = [
   { to: '/meetings', label: 'การประชุม', icon: CalendarDays, end: false },
 ]
 
+// Shown only to admin/superadmin sessions — /#/vote/results is RequireAdmin.
+const adminLinks = [{ to: '/vote/results', label: 'โหวตครู', icon: Heart, end: false }]
+
 export default function Navbar() {
   const { admin, logout } = useAdminAuth()
   const navigate = useNavigate()
+  const visibleLinks = hasAdminAccess(admin?.role) ? [...links, ...adminLinks] : links
 
   function handleLogout() {
     logout()
@@ -43,7 +47,7 @@ export default function Navbar() {
         </div>
 
         <nav className="flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-card/60 p-1 shadow-soft">
-          {links.map(({ to, label, icon: Icon, end }) => (
+          {visibleLinks.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}

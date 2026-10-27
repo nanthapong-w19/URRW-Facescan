@@ -176,3 +176,20 @@ export interface MeetingCheckinRow {
   confidence: number | null
   photo_url: string | null
 }
+
+// A member who can be voted for on the โหวตครูในดวงใจ page — the minimal
+// member fields that page and the results ranking need, without the face
+// descriptor/photo the full Member shape carries.
+export interface VoteCandidate {
+  id: string
+  name: string
+  department: string
+  position: string
+}
+
+// One candidate's row on the vote-results ranking. `rank` is a competition
+// rank (1, 2, 2, 4 …) so tied candidates share a place.
+export interface VoteTally extends VoteCandidate {
+  votes: number
+  rank: number
+}

@@ -31,7 +31,7 @@ import {
   ClipboardList,
 } from 'lucide-react'
 import { getMeeting, deleteMeeting, getMeetingCheckins, getMemberPhotosByIds, recordMeetingCheckin, updateMeeting } from '@/lib/store'
-import { useAdminAuth } from '@/lib/adminAuth'
+import { hasAdminAccess, useAdminAuth } from '@/lib/adminAuth'
 import { MATCH_THRESHOLD } from '@/lib/faceEngine'
 import { applyMeetingCheckinEvent } from '@/lib/realtimeSync'
 import type { RealtimeChange } from '@/lib/realtimeSync'
@@ -104,7 +104,7 @@ export default function MeetingDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { admin } = useAdminAuth()
-  const isAdmin = admin?.role === 'admin'
+  const isAdmin = hasAdminAccess(admin?.role)
 
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [checkins, setCheckins] = useState<MeetingCheckin[]>([])

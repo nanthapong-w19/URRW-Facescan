@@ -42,3 +42,21 @@ Number sequentially. Keep all decisions (lightweight, historical value). Update 
 **Consequences:**
 - Benefits: correct-by-default if RTL locale is ever added; no behavior change in current LTR-only usage
 - Trade-offs: none identified; purely a naming/property swap
+
+### ADR-002: Teacher vote — one vote per device, superadmin as session role (2026-10-27)
+
+**Context:**
+- โหวตครูในดวงใจ is opened anonymously from a QR code; app has no real auth
+- `superurrwnm` member already existed (role `admin` in DB) and needed to become "superadmin"
+
+**Decision:**
+- One vote per device: random id in localStorage + unique constraint on `facein_teacher_votes.voter_device`
+- `superadmin` is a client session role (`SessionRole` in `lib/adminAuth.tsx`) derived from employee ID, not a new DB `role` value; use `hasAdminAccess()` instead of `role === 'admin'`
+
+**Alternatives Considered:**
+- Voter enters employee ID -> Rejected: voters (students/guests) aren't in the roster
+- Add `superadmin` to DB role column -> Rejected: touches every member query/check constraint for one account
+
+**Consequences:**
+- Benefits: no login friction for voters; no member-table schema change
+- Trade-offs: clearing site data / another browser = another vote; RLS still open to anon like other facein_* tables

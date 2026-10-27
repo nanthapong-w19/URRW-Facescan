@@ -13,6 +13,8 @@ import MeetingList from '@/pages/MeetingList'
 import CreateMeeting from '@/pages/CreateMeeting'
 import MeetingDetail from '@/pages/MeetingDetail'
 import MeetingSummary from '@/pages/MeetingSummary'
+import TeacherVote from '@/pages/TeacherVote'
+import VoteResults from '@/pages/VoteResults'
 import { isSupabaseConfigured } from '@/lib/supabaseClient'
 import { AdminAuthProvider } from '@/lib/adminAuth'
 
@@ -44,7 +46,9 @@ function AppShell() {
   // "เข้าสู่ระบบผู้ดูแล" button, member/meeting links, etc.) doesn't belong
   // there since the visitor isn't logged in yet and shouldn't be able to
   // jump elsewhere in the app from this screen.
-  const hideNavbar = location.pathname === '/login'
+  // /#/vote is the same kind of standalone screen — the public teacher-vote
+  // page voters open from the QR code on their own phones.
+  const hideNavbar = location.pathname === '/login' || location.pathname === '/vote'
 
   return (
     <div className="min-h-screen bg-background">
@@ -113,6 +117,16 @@ function AppShell() {
               /meetings/:id above, since anyone with the meeting link should
               be able to check attendance without needing admin access. */}
           <Route path="/meetings/:id/summary" element={<MeetingSummary />} />
+          {/* Public — opened from the QR code, no login. */}
+          <Route path="/vote" element={<TeacherVote />} />
+          <Route
+            path="/vote/results"
+            element={
+              <RequireAdmin>
+                <VoteResults />
+              </RequireAdmin>
+            }
+          />
         </Routes>
       </main>
       <Toaster position="top-right" richColors />

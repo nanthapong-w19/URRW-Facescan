@@ -23,7 +23,7 @@ import { Users, CalendarPlus, CalendarDays, Clock, CheckCircle2, ChevronUp, Chev
 import { useAppData } from '@/hooks/useAppData'
 import { useAdminAuth } from '@/lib/adminAuth'
 import { createMeeting } from '@/lib/store'
-import { MEETING_ROOMS } from '@/lib/constants'
+import { MEETING_ROOMS, SUPERADMIN_EMPLOYEE_ID } from '@/lib/constants'
 import { formatThaiDateInput } from '@/lib/thaiCalendar'
 import { cn } from '@/lib/utils'
 
@@ -61,7 +61,7 @@ function TimeSpinner({ value, onChange, max }: { value: number; onChange: (next:
 // Hidden system account — never shown, searchable, or selectable as a
 // meeting participant (not a real invitee, so it shouldn't appear in the
 // roster this page picks from, nor get swept in by "เลือกทั้งหมด").
-const HIDDEN_EMPLOYEE_IDS = ['superurrwnm']
+const HIDDEN_EMPLOYEE_IDS = [SUPERADMIN_EMPLOYEE_ID]
 
 export default function CreateMeeting() {
   const { members: allMembers } = useAppData()
