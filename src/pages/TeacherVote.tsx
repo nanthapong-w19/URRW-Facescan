@@ -7,7 +7,6 @@ import { SearchInput } from '@/components/ui/search-input'
 import { InitialsAvatar } from '@/components/ui/initials-avatar'
 import { castTeacherVote, getMemberPhotosByIds, getVoteCandidates, hasDeviceVoted } from '@/lib/store'
 import type { VoteCandidate } from '@/lib/types'
-import { cn } from '@/lib/utils'
 
 // Public page the QR code on /#/vote/results points to — no login, opened
 // on the voter's own phone. One vote per device: a random device id kept in
@@ -153,10 +152,18 @@ export default function TeacherVote() {
     }
   }
 
+  function selectCandidate(c: VoteCandidate) {
+    setSelected(c)
+    setQuery('')
+  }
+
   return (
     // Same full-bleed maroon/gold backdrop as /#/login — this is also a
-    // standalone screen with no navbar (see App.tsx hideNavbar).
-    <div className="relative -my-8 ml-[calc(50%-50vw)] mr-[calc(50%-50vw)] min-h-screen min-h-[100dvh] w-screen overflow-hidden bg-primary">
+    // standalone screen with no navbar (see App.tsx hideNavbar). Locked to
+    // exactly one screen height (100dvh, so it tracks the mobile address bar
+    // and on-screen keyboard): voters on a phone should never have to scroll
+    // the page — only the search-result list scrolls, inside the card.
+    <div className="relative -my-8 ml-[calc(50%-50vw)] mr-[calc(50%-50vw)] h-screen h-[100dvh] w-screen overflow-hidden bg-primary">
       <div
         className="pointer-events-none absolute inset-0 animate-login-gradient bg-[linear-gradient(135deg,hsl(350_62%_10%)_0%,hsl(350_62%_24%)_28%,hsl(355_55%_34%)_48%,hsl(38_68%_38%)_62%,hsl(350_60%_16%)_80%,hsl(350_62%_10%)_100%)]"
         aria-hidden
@@ -167,28 +174,32 @@ export default function TeacherVote() {
       />
 
       <div
-        className="relative mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-md flex-col items-center justify-center gap-6 px-4 py-10"
+        className="relative mx-auto flex h-full w-full max-w-md flex-col justify-center px-3 sm:px-4"
         style={{
-          paddingTop: 'max(2.5rem, env(safe-area-inset-top) + 1.5rem)',
-          paddingBottom: 'max(2.5rem, env(safe-area-inset-bottom) + 1.5rem)',
+          paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
         }}
       >
         <h1 className="sr-only">โหวตครูในดวงใจ</h1>
 
-        <Card className="animate-login-card-in w-full border-accent/25 bg-card/[0.97] shadow-2xl backdrop-blur-sm">
-          <CardHeader className="items-center text-center">
-            <img src="/logo.png" alt="ตราสัญลักษณ์โรงเรียน" className="h-16 w-16 object-contain" />
-            <CardTitle className="font-display flex items-center gap-2 text-2xl font-bold text-primary">
-              <Heart className="h-6 w-6 fill-primary text-primary" /> โหวตครูในดวงใจ
-            </CardTitle>
-            {votedName === null && <CardDescription>พิมพ์ชื่อครู เลือก แล้วกดโหวต (โหวตได้ 1 ครั้ง)</CardDescription>}
+        <Card className="animate-login-card-in flex max-h-full min-h-0 w-full flex-col border-accent/25 bg-card/[0.97] shadow-2xl backdrop-blur-sm">
+          <CardHeader className="shrink-0 items-center space-y-1 p-4 pb-2 text-center">
+            <div className="flex items-center gap-2">
+              <img src="/logo.png" alt="ตราสัญลักษณ์โรงเรียน" className="h-10 w-10 object-contain" />
+              <CardTitle className="font-display flex items-center gap-1.5 text-xl font-bold text-primary">
+                <Heart className="h-5 w-5 fill-primary text-primary" /> โหวตครูในดวงใจ
+              </CardTitle>
+            </div>
+            {votedName === null && (
+              <CardDescription className="text-xs">พิมพ์ชื่อครู เลือก แล้วกดโหวต (โหวตได้ 1 ครั้ง)</CardDescription>
+            )}
           </CardHeader>
 
-          <CardContent className="space-y-4">
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-4 pt-2">
             {votedName !== null ? (
-              <div className="flex flex-col items-center gap-3 py-4 text-center" role="status" aria-live="polite">
-                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/15 animate-login-success-pop">
-                  <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+              <div className="flex flex-col items-center gap-2 py-3 text-center" role="status" aria-live="polite">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15 animate-login-success-pop">
+                  <CheckCircle2 className="h-10 w-10 text-emerald-600" />
                 </div>
                 <p className="font-display text-xl font-bold text-foreground">โหวตสำเร็จแล้ว</p>
                 {votedName ? (
@@ -200,6 +211,41 @@ export default function TeacherVote() {
                 )}
                 <p className="text-xs text-muted-foreground">ขอบคุณที่ร่วมโหวต</p>
               </div>
+            ) : selected ? (
+              // Once a teacher is picked the search UI steps aside, so the
+              // photo, name and vote button all fit on one phone screen.
+              <>
+                <div className="flex min-h-0 flex-col items-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-center">
+                  {selectedPhoto === undefined ? (
+                    <div
+                      className="h-[min(7rem,22dvh)] w-[min(7rem,22dvh)] shrink-0 animate-pulse rounded-full bg-muted"
+                      aria-label="กำลังโหลดรูป"
+                    />
+                  ) : (
+                    <InitialsAvatar
+                      name={selected.name}
+                      photo={selectedPhoto}
+                      className="h-[min(7rem,22dvh)] w-[min(7rem,22dvh)] ring-4 ring-primary/30 [&>div]:text-4xl"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">ครูที่คุณเลือก</p>
+                    <p className="font-display text-lg font-bold leading-snug text-foreground">{selected.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {[selected.position, selected.department].filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button variant="outline" size="lg" className="flex-1" onClick={() => setSelected(null)} disabled={submitting}>
+                    เปลี่ยน
+                  </Button>
+                  <Button size="lg" className="flex-[2] gap-2" onClick={handleVote} disabled={submitting}>
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Heart className="h-4 w-4" />}
+                    โหวต
+                  </Button>
+                </div>
+              </>
             ) : (
               <>
                 <SearchInput
@@ -207,71 +253,43 @@ export default function TeacherVote() {
                   placeholder={loading ? 'กำลังโหลดรายชื่อ...' : 'พิมพ์ชื่อครู'}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  disabled={loading || submitting}
+                  disabled={loading}
                   autoComplete="off"
+                  containerClassName="shrink-0"
                   // 16px — keeps iOS Safari from zooming on focus.
-                  className="h-12 rounded-xl text-base"
+                  className="h-11 rounded-xl text-base"
                 />
 
                 {query.trim() && (
-                  <ul className="max-h-72 space-y-1.5 overflow-y-auto" aria-label="ผลการค้นหา">
+                  // min-h-0 + overflow lets this list shrink to whatever
+                  // height is left (e.g. with the keyboard open) and scroll
+                  // inside the card instead of pushing the page taller.
+                  <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain" aria-label="ผลการค้นหา">
                     {results.length === 0 ? (
-                      <li className="py-6 text-center text-sm text-muted-foreground">ไม่พบชื่อครูที่ค้นหา</li>
+                      <li className="py-4 text-center text-sm text-muted-foreground">ไม่พบชื่อครูที่ค้นหา</li>
                     ) : (
-                      results.map((c) => {
-                        const isSelected = selected?.id === c.id
-                        return (
-                          <li key={c.id}>
-                            <button
-                              type="button"
-                              onClick={() => setSelected(c)}
-                              aria-pressed={isSelected}
-                              className={cn(
-                                'flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-start transition-colors',
-                                isSelected
-                                  ? 'border-primary bg-primary/10 ring-1 ring-primary/40'
-                                  : 'border-border/70 hover:border-primary/40 hover:bg-secondary'
-                              )}
-                            >
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-medium text-foreground">{c.name}</span>
-                                <span className="block truncate text-xs text-muted-foreground">
-                                  {[c.position, c.department].filter(Boolean).join(' · ')}
-                                </span>
+                      results.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            onClick={() => selectCandidate(c)}
+                            className="flex w-full items-center rounded-xl border border-border/70 px-3 py-2 text-start transition-colors hover:border-primary/40 hover:bg-secondary"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-foreground">{c.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {[c.position, c.department].filter(Boolean).join(' · ')}
                               </span>
-                              {isSelected && <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />}
-                            </button>
-                          </li>
-                        )
-                      })
+                            </span>
+                          </button>
+                        </li>
+                      ))
                     )}
                   </ul>
                 )}
 
-                {selected && (
-                  <div className="flex flex-col items-center gap-2 rounded-2xl bg-secondary px-4 py-4 text-center">
-                    {selectedPhoto === undefined ? (
-                      <div className="h-28 w-28 animate-pulse rounded-full bg-muted" aria-label="กำลังโหลดรูป" />
-                    ) : (
-                      <InitialsAvatar
-                        name={selected.name}
-                        photo={selectedPhoto}
-                        className="h-28 w-28 ring-4 ring-primary/30 [&>div]:text-4xl"
-                      />
-                    )}
-                    <div>
-                      <p className="text-xs text-muted-foreground">ครูที่คุณเลือก</p>
-                      <p className="font-display text-lg font-bold text-foreground">{selected.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {[selected.position, selected.department].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <Button size="lg" className="w-full gap-2" onClick={handleVote} disabled={!selected || submitting}>
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Heart className="h-4 w-4" />}
-                  โหวต
+                <Button size="lg" className="w-full shrink-0 gap-2" disabled>
+                  <Heart className="h-4 w-4" /> โหวต
                 </Button>
               </>
             )}

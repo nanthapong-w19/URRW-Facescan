@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { toast } from 'sonner'
-import { Heart, Copy, Download, RefreshCw, Trophy, Medal, Eye, EyeOff, Trash2, Maximize, Minimize } from 'lucide-react'
+import { Heart, Copy, Download, RefreshCw, Trophy, Medal, Eye, EyeOff, Trash2, Maximize, Minimize, ZoomIn, ZoomOut } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -44,6 +44,26 @@ function writeHideScores(hidden: boolean) {
   }
 }
 
+// QR zoom steps for the −/+ buttons, as multipliers on the base size
+// below. Remembered per browser like HIDE_SCORES_KEY.
+const QR_ZOOM_KEY = 'facein_vote_qr_zoom'
+const QR_ZOOM_STEPS = [0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5]
+const QR_ZOOM_DEFAULT = QR_ZOOM_STEPS.indexOf(1)
+
+// Base QR edge length: big and viewport-relative when it's alone on screen
+// (scores hidden), a fixed card-sized square next to the ranking otherwise.
+const QR_BASE_HIDDEN = 'min(55vw, 50dvh)'
+const QR_BASE_CARD = '208px'
+
+function readQrZoom(): number {
+  try {
+    const i = Number(window.localStorage.getItem(QR_ZOOM_KEY))
+    return Number.isInteger(i) && i >= 0 && i < QR_ZOOM_STEPS.length ? i : QR_ZOOM_DEFAULT
+  } catch {
+    return QR_ZOOM_DEFAULT
+  }
+}
+
 const RANK_STYLES: Record<number, string> = {
   1: 'bg-accent/20 text-accent-foreground ring-1 ring-accent/50',
   2: 'bg-slate-300/40 text-foreground ring-1 ring-slate-400/50',
@@ -60,6 +80,7 @@ export default function VoteResults() {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [qrZoom, setQrZoom] = useState(() => readQrZoom())
   const rootRef = useRef<HTMLDivElement>(null)
   const url = voteUrl()
 
@@ -108,6 +129,18 @@ export default function VoteResults() {
     return () => window.clearInterval(timer)
   }, [refresh, hideScores])
 
+  function zoomQr(delta: number) {
+    setQrZoom((prev) => {
+      const next = Math.min(QR_ZOOM_STEPS.length - 1, Math.max(0, prev + delta))
+      try {
+        window.localStorage.setItem(QR_ZOOM_KEY, String(next))
+      } catch {
+        // ignore — zoom still applies for this page load
+      }
+      return next
+    })
+  }
+
   function toggleHideScores() {
     setHideScores((prev) => {
       writeHideScores(!prev)
@@ -142,14 +175,47 @@ export default function VoteResults() {
 
   const topVotes = tally[0]?.votes ?? 0
 
+  // Capped so the largest zoom step never overflows a phone-width screen,
+  // nor (scores shown) the 340px QR card column.
+  const qrEdge = hideScores
+    ? `min(calc(${QR_BASE_HIDDEN} * ${QR_ZOOM_STEPS[qrZoom]}), 80vw, 75dvh)`
+    : `min(calc(${QR_BASE_CARD} * ${QR_ZOOM_STEPS[qrZoom]}), 260px, 70vw)`
+  const qrStyle = { width: qrEdge, height: qrEdge }
+
   const qrImage = qrDataUrl ? (
-    <img
-      src={qrDataUrl}
-      alt="QR code ลิงก์หน้าโหวตครูในดวงใจ"
-      className={hideScores ? 'h-[min(55vw,50dvh)] w-[min(55vw,50dvh)]' : 'h-52 w-52'}
-    />
+    <img src={qrDataUrl} alt="QR code ลิงก์หน้าโหวตครูในดวงใจ" style={qrStyle} className="transition-[width,height] duration-200" />
   ) : (
-    <div className={cn('animate-pulse rounded-lg bg-muted', hideScores ? 'h-[min(55vw,50dvh)] w-[min(55vw,50dvh)]' : 'h-52 w-52')} />
+    <div style={qrStyle} className="animate-pulse rounded-lg bg-muted" />
+  )
+
+  const qrZoomControls = (
+    <div className="flex items-center gap-1 rounded-full bg-secondary p-1 shadow-soft">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-full"
+        onClick={() => zoomQr(-1)}
+        disabled={qrZoom === 0}
+        aria-label="ย่อ QR code"
+        title="ย่อ QR code"
+      >
+        <ZoomOut className="h-4 w-4" />
+      </Button>
+      <span className="min-w-[3rem] text-center text-xs font-medium tabular-nums text-foreground">
+        {Math.round(QR_ZOOM_STEPS[qrZoom] * 100)}%
+      </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-full"
+        onClick={() => zoomQr(1)}
+        disabled={qrZoom === QR_ZOOM_STEPS.length - 1}
+        aria-label="ขยาย QR code"
+        title="ขยาย QR code"
+      >
+        <ZoomIn className="h-4 w-4" />
+      </Button>
+    </div>
   )
 
   return (
@@ -210,7 +276,10 @@ export default function VoteResults() {
 
         {hideScores ? (
           <div className={cn('flex items-center justify-center', isFullscreen ? 'min-h-[calc(100dvh-10rem)]' : 'min-h-[calc(100dvh-14rem)]')}>
-            <div className="rounded-3xl bg-white p-4 shadow-2xl sm:p-6">{qrImage}</div>
+            <div className="flex flex-col items-center gap-4">
+              <div className="rounded-3xl bg-white p-4 shadow-2xl sm:p-6">{qrImage}</div>
+              {qrZoomControls}
+            </div>
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_1fr]">
@@ -220,6 +289,7 @@ export default function VoteResults() {
               </CardHeader>
               <CardContent className="flex flex-col items-center gap-4">
                 <div className="rounded-2xl bg-white p-3 shadow-soft">{qrImage}</div>
+                {qrZoomControls}
                 <p className="w-full break-all rounded-lg bg-muted px-3 py-2 text-center text-xs text-muted-foreground">{url}</p>
                 <div className="flex w-full gap-2">
                   <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={copyLink}>
