@@ -4,7 +4,8 @@ import { Heart, CheckCircle2, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { SearchInput } from '@/components/ui/search-input'
-import { castTeacherVote, getVoteCandidates } from '@/lib/store'
+import { InitialsAvatar } from '@/components/ui/initials-avatar'
+import { castTeacherVote, getMemberPhotosByIds, getVoteCandidates, hasDeviceVoted } from '@/lib/store'
 import type { VoteCandidate } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -43,6 +44,14 @@ function readVotedName(): string | null {
   }
 }
 
+function forgetVote() {
+  try {
+    window.localStorage.removeItem(VOTED_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 function rememberVote(name: string) {
   try {
     window.localStorage.setItem(VOTED_KEY, name)
@@ -58,6 +67,49 @@ export default function TeacherVote() {
   const [selected, setSelected] = useState<VoteCandidate | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [votedName, setVotedName] = useState<string | null>(() => readVotedName())
+  // Photo of the currently selected teacher, fetched on selection rather
+  // than with the candidate list — photos are ~60-120KB each (see
+  // MEMBER_COLUMNS in store.ts), far too heavy to load for the whole roster
+  // on a phone. `undefined` = still loading, `null` = no photo registered.
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    if (!selected) return
+    let cancelled = false
+    setSelectedPhoto(undefined)
+    getMemberPhotosByIds([selected.id])
+      .then((photos) => {
+        if (!cancelled) setSelectedPhoto(photos[selected.id] ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedPhoto(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selected])
+
+  // An admin's "ล้างคะแนนโหวต" deletes this device's vote row — if it's
+  // gone, drop the local flag so the device can vote in the new round.
+  useEffect(() => {
+    if (votedName === null) return
+    let cancelled = false
+    hasDeviceVoted(getDeviceId())
+      .then((voted) => {
+        if (!cancelled && !voted) {
+          forgetVote()
+          setVotedName(null)
+        }
+      })
+      .catch(() => {
+        // keep showing "already voted"; the unique constraint still guards
+      })
+    return () => {
+      cancelled = true
+    }
+    // Only on mount — re-running after a fresh vote would race the insert.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -197,9 +249,24 @@ export default function TeacherVote() {
                 )}
 
                 {selected && (
-                  <p className="rounded-xl bg-secondary px-3 py-2 text-center text-sm">
-                    เลือก: <span className="font-semibold text-foreground">{selected.name}</span>
-                  </p>
+                  <div className="flex flex-col items-center gap-2 rounded-2xl bg-secondary px-4 py-4 text-center">
+                    {selectedPhoto === undefined ? (
+                      <div className="h-28 w-28 animate-pulse rounded-full bg-muted" aria-label="กำลังโหลดรูป" />
+                    ) : (
+                      <InitialsAvatar
+                        name={selected.name}
+                        photo={selectedPhoto}
+                        className="h-28 w-28 ring-4 ring-primary/30 [&>div]:text-4xl"
+                      />
+                    )}
+                    <div>
+                      <p className="text-xs text-muted-foreground">ครูที่คุณเลือก</p>
+                      <p className="font-display text-lg font-bold text-foreground">{selected.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {[selected.position, selected.department].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                  </div>
                 )}
 
                 <Button size="lg" className="w-full gap-2" onClick={handleVote} disabled={!selected || submitting}>

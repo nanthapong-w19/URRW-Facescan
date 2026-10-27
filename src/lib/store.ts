@@ -114,6 +114,11 @@ function describeDbError(err: unknown): string {
   if (message.includes('facein_meeting_checkins_meeting_member_unique')) {
     return 'เช็คอินแล้ว'
   }
+  // PGRST205 = table missing — the teacher-vote migration hasn't been run
+  // on this Supabase project yet (supabase/migrations/*_teacher_votes.sql).
+  if (message.includes('PGRST205') && message.includes('facein_teacher_votes')) {
+    return 'ยังไม่ได้สร้างตารางโหวตในฐานข้อมูล กรุณาให้ผู้ดูแลรันไฟล์ supabase/migrations/20261027000000_teacher_votes.sql ใน Supabase SQL Editor'
+  }
   if (message.includes('facein_teacher_votes_voter_device_unique')) {
     return 'อุปกรณ์นี้โหวตไปแล้ว'
   }
@@ -474,13 +479,18 @@ export function todaysCheckins(checkins: CheckinRecord[]): CheckinRecord[] {
 
 // --- Teacher vote (โหวตครูในดวงใจ) ------------------------------------------
 
-// Everyone with the plain 'user' role, i.e. the real staff roster — admin/
-// viewer/superadmin accounts are system logins, not people to vote for.
+// Only these positions can be voted for — not ครูอัตราจ้าง, office staff,
+// or the director's office. Exact match against facein_members.position.
+const VOTE_CANDIDATE_POSITIONS = ['ครู', 'ครูผู้ช่วย']
+
+// Plain 'user' members in VOTE_CANDIDATE_POSITIONS — admin/viewer/superadmin
+// accounts are system logins, not people to vote for.
 export async function getVoteCandidates(): Promise<VoteCandidate[]> {
   const { data, error } = await supabase
     .from('facein_members')
     .select('id, name, department, position')
     .eq('role', 'user')
+    .in('position', VOTE_CANDIDATE_POSITIONS)
     .neq('employee_id', SUPERADMIN_EMPLOYEE_ID)
     .order('name', { ascending: true })
   if (error) throw new Error(describeDbError(error))
@@ -525,4 +535,33 @@ export async function getTeacherVoteTally(): Promise<{ tally: VoteTally[]; total
   })
 
   return { tally, totalVotes: votes.data.length }
+}
+
+// Wipes every vote — the "ล้างคะแนนโหวต" button on /#/vote/results. Needs the
+// delete policy from supabase/migrations/*_teacher_votes_reset.sql; without
+// it RLS silently matches zero rows, so the deleted count is checked.
+// PostgREST refuses an unfiltered DELETE, hence the always-true filter.
+export async function resetTeacherVotes(): Promise<void> {
+  const { data, error } = await supabase.from('facein_teacher_votes').delete().not('id', 'is', null).select('id')
+  if (error) throw new Error(describeDbError(error))
+  const { count, error: countError } = await supabase
+    .from('facein_teacher_votes')
+    .select('id', { count: 'exact', head: true })
+  if (countError) throw new Error(describeDbError(countError))
+  if ((count ?? 0) > 0) {
+    throw new Error(
+      `ล้างคะแนนไม่สำเร็จ (ลบได้ ${data?.length ?? 0} รายการ) — กรุณารันไฟล์ supabase/migrations/20261027010000_teacher_votes_reset.sql ใน Supabase SQL Editor`
+    )
+  }
+}
+
+// Whether this device's vote is still in the table — lets the vote page
+// forget its local "already voted" flag after an admin resets the votes.
+export async function hasDeviceVoted(voterDevice: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('facein_teacher_votes')
+    .select('id', { count: 'exact', head: true })
+    .eq('voter_device', voterDevice)
+  if (error) throw new Error(describeDbError(error))
+  return (count ?? 0) > 0
 }
